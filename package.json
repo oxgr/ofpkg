@@ -8,11 +8,15 @@
     "start": "node src/app.js",
     "build": "pkg .",
     "buildRun": "pkg . && ./dist/ofpkg",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "buildTest": "npm run build && npm run test",
+    "test": "cd /Users/rafael/Documents/of_v0.11.2_osx_release/apps/antimodular/remotePulseActionsTest && /Users/rafael/Documents/experiments/ofpkg/dist/ofpkg . && cd -"
   },
   "pkg": {
     "targets": [
       "node16-macos-x64"
+    ],
+    "assets": [
+      "./ofpkg.config.json"
     ],
     "outputPath": "dist/"
   },
@@ -23,6 +27,7 @@
   "author": "Faadhi Fauzi",
   "license": "ISC",
   "dependencies": {
-    "command-line-args": "^5.2.1"
+    "command-line-args": "^5.2.1",
+    "fs-extra": "^10.1.0"
   }
 }
