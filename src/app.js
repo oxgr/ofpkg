@@ -2,6 +2,10 @@ const fs = require( 'fs-extra' );
 const path = require( 'path' );
 const commandLineArgs = require( 'command-line-args' );
 const chalk = require( 'chalk' );
+const archiver = require( 'archiver' );
+const { ArchiverError } = require( 'archiver' );
+const { arch } = require( 'os' );
+const { Console } = require( 'console' );
 
 // import * as fs from 'fs' ;
 // import * as path from 'path'
@@ -14,76 +18,163 @@ function init() {
 
     // console.log( 'Hi ofpkg!' );
     console.log( `   
-        ┌─┐┌─┐┌─┐┬┌─┌─┐┌┐
-        │ │├┤ ├─┘├┴┐│ ┬├┴┐
-        └─┘└  ┴  ┴ ┴└─┘┴ ┴ 
+        ┌─┐┌─┐┌─┐┬┌─┌─┐
+        │ │├┤ ├─┘├┴┐│ ┬
+        └─┘└  ┴  ┴ ┴└─┘
     `);
+
+    // ┌┐
+    // ├┴┐
+    // ┴ ┴ 
 
 
     // Global paths
     const CWD = process.cwd();
     const EXEC_DIR = path.dirname( process.execPath );
 
-    console.log( 'CWD:', CWD );
-    console.log( '__dirname:', __dirname );
-    console.log( 'EXEC_DIR:', EXEC_DIR )
 
     // Get config
     const configPath = path.join( __dirname, '..', 'ofpkg.config.json' );
-    const config = getConfig( configPath );
-    console.log( 'config:', config );
-    const OF_DIR = config.ofPath;
+    const { OF_PATH } = getConfig( configPath );
 
     // Process arguments
     const ARGS = getArgs();
-    console.log( 'ARGS:', ARGS );
+
+    if ( ARGS.verbose )
+        console.log( {
+            CWD: CWD,
+            __dirname: __dirname,
+            EXEC_DIR: EXEC_DIR,
+            OF_PATH: OF_PATH,
+            ARGS: ARGS,
+        } )
 
     // const TARGET_PATH = ARGS.target || CWD;
-    const TARGET_PATH = ARGS.target && ARGS.target != '.' ? ARGS.target : CWD;
-    const OUTPUT_PATH = ARGS.output || path.join( path.dirname( TARGET_PATH ), ( path.basename( TARGET_PATH ) + '-ofpkg' ) );
 
-    console.log( `
-    TARGET_PATH: ${TARGET_PATH}
-    OUTPUT_PATH: ${OUTPUT_PATH}
-    `)
+    const TARGETS = ARGS.targets.map( target => {
 
-    try {
-        copyTargetDirectory( TARGET_PATH, OUTPUT_PATH );
-    } catch ( e ) {
-        console.log( chalk.red.bold( e.message ) );
-        return;
+        const PATH = target && target != '.' ? target : CWD;
+        const NAME = ( path.basename( PATH ) );
+
+        if ( ARGS.verbose ) console.log( '%s: %s', NAME, PATH );
+
+        return {
+            PATH: PATH,
+            NAME: NAME,
+        }
+
+    } )
+
+    const OUTPUT_NAME = path.basename( ARGS.output ) || TARGETS.length == 1 ? TARGETS[ 0 ].NAME : 'ofpkg'
+    const OUTPUT_PATH = ARGS.output || path.join( CWD, OUTPUT_NAME );
+
+    fs.ensureDirSync( OUTPUT_PATH );
+
+    // console.log( OUTPUT_PATH )
+    // console.log( 'TARGETS:', TARGETS )
+
+    console.log( chalk.bold( 'Copying target directories...' ) );
+
+    TARGETS.forEach( ( target ) => {
+
+        console.log( '\n', chalk.bold.yellow( target.NAME ), '\n' );
+
+        try {
+            copyTargetDirectory( target.PATH, path.join( OUTPUT_PATH, target.NAME ) );
+        } catch ( e ) {
+            console.log( chalk.red.bold( e.message ) );
+            if ( fs.pathExistsSync( OUTPUT_PATH ) ) fs.rmSync( OUTPUT_PATH, { recursive: true } )
+            return;
+        }
+        const addons = processAddons( path.join( OUTPUT_PATH, target.NAME ), OF_PATH, { copy: true } );
+
+        // Copy global addon if found in local global folder.
+        addons.forEach( ( addon ) => {
+
+            if ( addon.found && !addon.local ) {
+
+                const src = addon.src;
+                const dest = path.join( OUTPUT_PATH, 'local_addons', addon.name );
+                fs.copySync( src, dest );
+
+                addon.text = path.join( 'local_addons', addon.name );
+
+            }
+
+        } )
+
+    } )
+
+    if ( !!ARGS.compress ) {
+
+        console.log( chalk.bold( 'Compressing ofpkg...' ) );
+        compressDirectory( OUTPUT_PATH, OUTPUT_NAME )
+            .then( () => {
+                console.log( chalk.bold( 'Removing leftover directories...' ) );
+                fs.rmSync( OUTPUT_PATH, { recursive: true } )
+            } )
+
+
     }
 
-    // Scan addons
-    const addonsMakePath = path.join( OUTPUT_PATH, 'addons.make' )
-    const addons = getAddons( addonsMakePath );
-    console.log( addons )
+    console.log( chalk.bold( 'Done!' ) );
 
-    // Create local_addons if it doesn't exist.
-    const outputLocalAddonsPath = path.join( OUTPUT_PATH, 'local_addons' );
-    fs.ensureDirSync( outputLocalAddonsPath );
+    /*************** Convenience functions *****************/
 
-    const results = addons.map( addon => {
+    async function compressDirectory( path, name = 'ofpkg' ) {
 
-        let addonName = addon;
-        const addonFound = ( () => {
+        const output = fs.createWriteStream( name + '.zip' );
+        const archive = archiver( 'zip' );
 
-            if ( addonName.includes( 'local_addons' ) ) {
+        output.on( 'close', () => {
+            if ( ARGS.verbose )
+                console.log( 'Total compressed size: %s\n', formatBytes( archive.pointer() ) )
+        } );
+        archive.on( 'error', ( err ) => { throw err } );
 
-                const tokens = addonName.split( '#' );
-                const addonPath = tokens[ 0 ].trim();
-                const addonUrl = tokens[ 1 ].trim();
+        archive.pipe( output );
+        archive.directory( path, name );
+        await archive.finalize();
 
-                addonName = addonPath.split( '/' )[ 1 ];
-                // console.log( 'localAddon', localAddonName, 'addonFound:', localAddonFound)
+    }
 
-                if ( !!fs.pathExistsSync( path.join( outputLocalAddonsPath, addonName ) ) ) return true;
+    function processAddons( targetPath, OF_PATH, options ) {
 
-                console.log( 'Local addon %s not addonFound, have to download from URL.', addonName );
-                return false;
+        // Scan addons
+        const addonsMakePath = path.join( targetPath, 'addons.make' )
+        const addons = getAddons( addonsMakePath );
+        // console.log( addons )
+
+        // Create local_addons if it doesn't exist.
+        const outputLocalAddonsPath = path.join( targetPath, 'local_addons' );
+        fs.ensureDirSync( outputLocalAddonsPath );
+
+        const results = addons.map( addon => {
+
+            let name = addon;
+            let found = false;
+            let src = '';
+            let local = false;
+            let text = addon;
+
+            if ( name.includes( 'local_addons' ) ) {
+
+                const tokens = name.split( '#' );
+                const localAddonPath = tokens[ 0 ].trim();
+                const localAddonUrl = tokens[ 1 ].trim();
+
+                name = localAddonPath.split( path.sep )[ 1 ];
+
+                // Check copied local_addons folder to see if the addon already exists and copied.
+                found = fs.pathExistsSync( path.join( outputLocalAddonsPath, name ) )
+                src = found ? localAddonPath : '';
+                local = true;
+
+                if ( !found ) console.log( 'Local addon %s not addonFound, have to download from URL.', name );
+
 
                 // try {
-                //     console.log( `Cloning ${addonName}...`);
+                //     console.log( `Cloning ${name}...`);
                 //     process.spawn( `cd git clone ${url}` );
                 // } catch ( err ) {
                 //     console.log( err );
@@ -93,106 +184,119 @@ function init() {
 
             } else {
 
-                const pathSrc = path.join( OF_DIR, 'addons', addonName );
-                if ( !fs.pathExistsSync( pathSrc ) ) return false;
+                let globalAddonPath = path.join( OF_PATH, 'addons', name );
 
-                const pathDest = path.join( outputLocalAddonsPath, addonName );
-                fs.copy( pathSrc, pathDest, ( err ) => {
-                    if ( err ) {
-                        // console.error( '%s does not exist in %s/addons/ directory.', addon, OF_DIR )
-                    }
-                } );
-                return true;
+                found = fs.pathExistsSync( globalAddonPath )
+                src = found ? globalAddonPath : '';
+                local = false;
 
                 // TODO: Write to addons.make to add local_addons/ path
 
             }
 
-        } )();
+            return {
+                name: name,
+                found: found,
+                src: src,
+                local: local,
+                text: text
+            }
 
-        return {
-            name: addonName,
-            found: addonFound
+        } );
+
+        console.log( chalk.bold( 'Found addons:' ) );
+        results.filter( e => e.found ).forEach( e => {
+            console.log( chalk.green( e.name ) );
+        } )
+        console.log();
+
+        console.log( chalk.bold( 'Missing addons:' ) );
+        results.filter( e => !e.found ).forEach( e => {
+            console.log( chalk.red( e.name ) );
+        } )
+        console.log();
+
+        return results;
+
+    }
+
+    function copyTargetDirectory( srcPath, destPath ) {
+
+        const srcExists = fs.pathExistsSync( srcPath );
+
+        if ( !srcExists )
+            throw new Error( 'Could not find target directory!\nYou can also target the current directory by running ofpkg without any arguments.' );
+
+        // Set up directory for ofpkg
+        fs.ensureDirSync( destPath );
+        fs.emptyDirSync( destPath );
+
+        // Copy project into pkg directory
+        fs.copySync( srcPath, destPath, { filter: ( e ) => !e.includes( 'ofpkg' ) } );
+
+        // Move if destPath == srcPath || '.'
+        // fs.moveSync( srcPath, destPath, { overwrite: true } )
+
+        return false;
+
+    }
+
+    function getConfig( configPath ) {
+
+        const configBuf = check( () => fs.readFileSync( configPath ) );
+        const config = check( () => JSON.parse( configBuf ) );
+
+        return config;
+
+    }
+
+    function getArgs() {
+
+        const claOptions = [
+            { name: 'targets', alias: 't', type: String, defaultOption: true, multiple: true },
+            { name: 'verbose', alias: 'v', type: Boolean },
+            { name: 'library', alias: 'l', type: Boolean },
+            { name: 'include', alias: 'i', type: String, multiple: true },
+            { name: 'output', alias: 'o', type: String },
+            { name: 'compress', alias: 'c', type: Boolean },
+        ]
+
+        return commandLineArgs( claOptions );
+
+    }
+
+    function getAddons( addonPath ) {
+
+        const buf = check( () => fs.readFileSync( addonPath, { encoding: 'utf8' } ) );
+        const addons = buf.split( '\n' );
+
+        return addons;
+
+    }
+
+    function check( func ) {
+
+        try {
+            const result = func();
+            return result;
+        } catch ( err ) {
+            console.log( err );
+            return err;
         }
 
-    } );
+    }
 
-    console.log( 'results:', results );
+    // https://stackoverflow.com/questions/15900485/correct-way-to-convert-size-in-bytes-to-kb-mb-gb-in-javascript
+    function formatBytes( bytes, decimals = 2 ) {
+        if ( bytes === 0 ) return '0 Bytes';
 
-    console.log( chalk.bold( 'Found addons:' ) );
-    results.filter( e => e.found ).forEach( e => {
-        console.log( chalk.green( e.name ) );
-    } )
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = [ 'Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB' ];
 
-    console.log();
-    console.log( chalk.bold( 'Missing addons:' ) );
-    results.filter( e => !e.found ).forEach( e => {
-        console.log( chalk.red( e.name ) );
-    } )
+        const i = Math.floor( Math.log( bytes ) / Math.log( k ) );
 
-}
-
-function copyTargetDirectory( srcPath, destPath ) {
-
-    const srcExists = fs.pathExistsSync( srcPath );
-
-    if ( !srcExists )
-        throw new Error( 'Could not find target directory!\nYou can also target the current directory by running ofpkg without any arguments.' );
-
-    // Set up directory for ofpkg
-    console.log( 'destPath:', destPath )
-    check( () => fs.ensureDirSync( destPath ) );
-    fs.emptyDirSync( destPath );
-
-    // Copy project into pkg directory
-    fs.copySync( srcPath, destPath, { filter: ( e ) => !e.includes( 'ofpkg' ) } );
-    // fs.moveSync( destPath_tempParent, srcPath, { overwrite: true } )
-
-    return false;
-
-}
-
-function getConfig( configPath ) {
-
-    const configBuf = check( () => fs.readFileSync( configPath ) );
-    const config = check( () => JSON.parse( configBuf ) );
-
-    return config;
-
-}
-
-function getArgs() {
-
-    const claOptions = [
-        { name: 'target', alias: 't', type: String, defaultOption: true },
-        { name: 'verbose', alias: 'v', type: Boolean },
-        { name: 'include', alias: 'i', type: String, multiple: true },
-        { name: 'output', alias: 'o', type: String }
-    ]
-
-    const ARGS = commandLineArgs( claOptions );
-
-    return ARGS;
-
-}
-
-function getAddons( addonPath ) {
-
-    const buf = check( () => fs.readFileSync( addonPath, { encoding: 'utf8' } ) );
-    const addons = buf.split( '\n' );
-
-    return addons;
-
-}
-
-function check( func ) {
-
-    try {
-        const result = func();
-        return result;
-    } catch ( err ) {
-        if ( ARGS.verbose ) console.log( err );
-        return err;
+        return parseFloat( ( bytes / Math.pow( k, i ) ).toFixed( dm ) ) + ' ' + sizes[ i ];
     }
 
 }
