@@ -1,6 +1,7 @@
 const fs = require( 'fs-extra' );
 const path = require( 'path' );
 const commandLineArgs = require( 'command-line-args' );
+const chalk = require( 'chalk' );
 
 // import * as fs from 'fs' ;
 // import * as path from 'path'
@@ -11,16 +12,13 @@ init();
 
 function init() {
 
-    console.log( 'Hi ofpkg!' );
+    // console.log( 'Hi ofpkg!' );
     console.log( `   
-      ______       ____
-     /      \\     /  _|
-    |   |    |  _|  |_
-    |   |    | |_    _|
-    |   |    |   |  |
-     \\      /    |  |
-      \\____/     |__|
+        ┌─┐┌─┐┌─┐┬┌─┌─┐┌┐
+        │ │├┤ ├─┘├┴┐│ ┬├┴┐
+        └─┘└  ┴  ┴ ┴└─┘┴ ┴ 
     `);
+
 
     // Global paths
     const CWD = process.cwd();
@@ -37,69 +35,109 @@ function init() {
     const OF_DIR = config.ofPath;
 
     // Process arguments
-    const args = getArgs();
-    console.log( 'args:', args );
+    const ARGS = getArgs();
+    console.log( 'ARGS:', ARGS );
 
-    const TARGET_PATH = args.target || CWD;
-    const OUTPUT_PATH = args.output || path.join( TARGET_PATH, '..', path.basename( TARGET_PATH ) ) + '-ofpkg';
+    // const TARGET_PATH = ARGS.target || CWD;
+    const TARGET_PATH = ARGS.target && ARGS.target != '.' ? ARGS.target : CWD;
+    const OUTPUT_PATH = ARGS.output || path.join( path.dirname( TARGET_PATH ), ( path.basename( TARGET_PATH ) + '-ofpkg' ) );
 
     console.log( `
     TARGET_PATH: ${TARGET_PATH}
-    TARGET_PATH_PARENT: ${path.dirname( TARGET_PATH )}
+    OUTPUT_PATH: ${OUTPUT_PATH}
     `)
 
-    copyTargetDirectory( TARGET_PATH, OUTPUT_PATH );
-
-    // Create local_addons if it doesn't exist.
-    const pkgLocalAddonsPath = path.join( OUTPUT_PATH, 'local_addons' );
-    fs.ensureDirSync( pkgLocalAddonsPath );
+    try {
+        copyTargetDirectory( TARGET_PATH, OUTPUT_PATH );
+    } catch ( e ) {
+        console.log( chalk.red.bold( e.message ) );
+        return;
+    }
 
     // Scan addons
-    const addonPath = path.join( OUTPUT_PATH, 'addons.make' )
-    const addons = getAddons( addonPath );
+    const addonsMakePath = path.join( OUTPUT_PATH, 'addons.make' )
+    const addons = getAddons( addonsMakePath );
     console.log( addons )
 
-    addons.forEach( addon => {
+    // Create local_addons if it doesn't exist.
+    const outputLocalAddonsPath = path.join( OUTPUT_PATH, 'local_addons' );
+    fs.ensureDirSync( outputLocalAddonsPath );
 
-        let pathSrc = '';
-        let pathDest = '';
+    const results = addons.map( addon => {
 
-        if ( addon.includes( 'local_addons' ) ) {
+        let addonName = addon;
+        const addonFound = ( () => {
 
-            const tokens = addon.split( '#' );
-            const localAddonPath = tokens[ 0 ].trim();
-            const localAddonURL = tokens[ 1 ].trim();
-            const localAddonName = localAddonPath.split( '/' )[ 1 ];
-            const localAddonFound = fs.pathExistsSync( path.join( pkgLocalAddonsPath, localAddonName ) )
-            // console.log( 'localAddon', localAddonName, 'found:', localAddonFound)
+            if ( addonName.includes( 'local_addons' ) ) {
 
-            if( !!localAddonFound ) return;
+                const tokens = addonName.split( '#' );
+                const addonPath = tokens[ 0 ].trim();
+                const addonUrl = tokens[ 1 ].trim();
 
-            console.log( 'Local addon %s not found, have to download from URL.', localAddonName );
+                addonName = addonPath.split( '/' )[ 1 ];
+                // console.log( 'localAddon', localAddonName, 'addonFound:', localAddonFound)
 
-        } else {
+                if ( !!fs.pathExistsSync( path.join( outputLocalAddonsPath, addonName ) ) ) return true;
 
-            pathSrc = path.join( OF_DIR, 'addons', addon );
-            pathDest = path.join( pkgLocalAddonsPath, addon );
-            fs.ensureDirSync( pathDest );
-            fs.copy( pathSrc, pathDest, ( err ) => {
-                if ( err ) {
-                    console.error( '%s does not exist in %s/addons/ directory.', addon, OF_DIR )
-                } else {
-                    console.log( addon, 'found!' );
-                }
-            });
+                console.log( 'Local addon %s not addonFound, have to download from URL.', addonName );
+                return false;
 
+                // try {
+                //     console.log( `Cloning ${addonName}...`);
+                //     process.spawn( `cd git clone ${url}` );
+                // } catch ( err ) {
+                //     console.log( err );
+                // }
+
+                // TODO: git clone addon from localAddonURL. Gotta test this. (Is this even in scope or should we delegate this to package manager?)
+
+            } else {
+
+                const pathSrc = path.join( OF_DIR, 'addons', addonName );
+                if ( !fs.pathExistsSync( pathSrc ) ) return false;
+
+                const pathDest = path.join( outputLocalAddonsPath, addonName );
+                fs.copy( pathSrc, pathDest, ( err ) => {
+                    if ( err ) {
+                        // console.error( '%s does not exist in %s/addons/ directory.', addon, OF_DIR )
+                    }
+                } );
+                return true;
+
+                // TODO: Write to addons.make to add local_addons/ path
+
+            }
+
+        } )();
+
+        return {
+            name: addonName,
+            found: addonFound
         }
-        
-        // fs.copyFile( pathToCopy, )
 
     } );
 
+    console.log( 'results:', results );
+
+    console.log( chalk.bold( 'Found addons:' ) );
+    results.filter( e => e.found ).forEach( e => {
+        console.log( chalk.green( e.name ) );
+    } )
+
+    console.log();
+    console.log( chalk.bold( 'Missing addons:' ) );
+    results.filter( e => !e.found ).forEach( e => {
+        console.log( chalk.red( e.name ) );
+    } )
+
 }
 
-function copyTargetDirectory
-( srcPath, destPath ) {
+function copyTargetDirectory( srcPath, destPath ) {
+
+    const srcExists = fs.pathExistsSync( srcPath );
+
+    if ( !srcExists )
+        throw new Error( 'Could not find target directory!\nYou can also target the current directory by running ofpkg without any arguments.' );
 
     // Set up directory for ofpkg
     console.log( 'destPath:', destPath )
@@ -110,7 +148,7 @@ function copyTargetDirectory
     fs.copySync( srcPath, destPath, { filter: ( e ) => !e.includes( 'ofpkg' ) } );
     // fs.moveSync( destPath_tempParent, srcPath, { overwrite: true } )
 
-    return destPath;
+    return false;
 
 }
 
@@ -126,15 +164,15 @@ function getConfig( configPath ) {
 function getArgs() {
 
     const claOptions = [
-        { name: 'path', type: String, defaultOption: true },
+        { name: 'target', alias: 't', type: String, defaultOption: true },
         { name: 'verbose', alias: 'v', type: Boolean },
         { name: 'include', alias: 'i', type: String, multiple: true },
         { name: 'output', alias: 'o', type: String }
     ]
 
-    const args = commandLineArgs( claOptions );
+    const ARGS = commandLineArgs( claOptions );
 
-    return args;
+    return ARGS;
 
 }
 
@@ -153,8 +191,8 @@ function check( func ) {
         const result = func();
         return result;
     } catch ( err ) {
-        console.log( err );
-        return undefined;
+        if ( ARGS.verbose ) console.log( err );
+        return err;
     }
 
 }

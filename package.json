@@ -27,6 +27,7 @@
   "author": "Faadhi Fauzi",
   "license": "ISC",
   "dependencies": {
+    "chalk": "^4.1.2",
     "command-line-args": "^5.2.1",
     "fs-extra": "^10.1.0"
   }
