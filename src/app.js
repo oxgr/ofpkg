@@ -3,12 +3,8 @@ const path = require( 'path' );
 const commandLineArgs = require( 'command-line-args' );
 const chalk = require( 'chalk' );
 const archiver = require( 'archiver' );
-const replace = require( 'replace-in-file' )
-
-// import * as fs from 'fs' ;
-// import * as path from 'path'
-// import commandLineArgs from 'command-line-args';
-// const __dirname = new URL('.', import.meta.url).pathname;
+const replace = require( 'replace-in-file' );
+const { exit } = require( 'process' );
 
 init();
 
@@ -23,7 +19,9 @@ async function init() {
 
     // Global paths
     const CWD = process.cwd();
-    const EXEC_DIR = path.dirname( path.dirname( process.execPath ) );
+    const EXEC_PATH = path.dirname( path.dirname( process.execPath ) );
+    const TEMP_PATH = path.join( EXEC_PATH, 'temp' );
+    fs.ensureDirSync( TEMP_PATH );
 
     // Get config
     const configPath = path.join( __dirname, '..', 'ofpkg.config.json' );
@@ -31,15 +29,6 @@ async function init() {
 
     // Process arguments
     const ARGS = getArgs();
-
-    if ( ARGS.verbose )
-        console.log( {
-            CWD: CWD,
-            __dirname: __dirname,
-            EXEC_DIR: EXEC_DIR,
-            OF_PATH: OF_PATH,
-            ARGS: ARGS,
-        } )
 
     const TARGETS = ARGS.targets.map( target => {
 
@@ -61,21 +50,75 @@ async function init() {
      * 2. If there is only one target, "<targetName>-ofpkg"
      * 3. ofpkg
      */
-    const OUTPUT_NAME = 
-        path.basename( ARGS.output ) || 
-        path.basename( OF_PATH ) + '-ofpkg' ||
-        TARGETS.length == 1 ?
-            TARGETS[ 0 ].NAME + '-ofpkg' :
-            'ofpkg'
+    const OUTPUT_NAME =
+        ARGS.output ? 
+            fs.pathExistsSync( ARGS.output ) ?
+                path.basename( ARGS.output ) + '-ofpkg' :    
+                path.basename( ARGS.output ) :
+            TARGETS.length == 1 ?
+                TARGETS[ 0 ].NAME + '-ofpkg' :
+                'ofpkg'
 
-    const OUTPUT_PATH = ARGS.output || path.join( CWD, OUTPUT_NAME );
+            // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
+
+    const OUTPUT_PATH = 
+        ARGS.output ?
+            fs.pathExistsSync( ARGS.output ) ?
+                ARGS.replace ?
+                    ARGS.output :
+                    path.join( ARGS.output, OUTPUT_NAME ) :
+                ARGS.output :
+            path.join( CWD, OUTPUT_NAME );
+            
+            // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
+    // if ( !ARGS.replace && fs.pathExistsSync( ARGS.output ) ) {
+    //     panic( Error(`
+    // ${chalk.bold.red( 'Error: Output directory provided already exists!' ) }
+    // Fixes:
+    // - Set the --output to a new directory name.
+    // - Use the --replace flag to overwrite an existing directory.
+    //     `));
+    // }
     fs.ensureDirSync( OUTPUT_PATH );
 
-    const TEMP_OUTPUT_PATH = path.join( EXEC_DIR, 'temp' );
+    const TEMP_OUTPUT_PATH = path.join( TEMP_PATH, OUTPUT_NAME );
     fs.ensureDirSync( TEMP_OUTPUT_PATH );
+
+    if ( ARGS.verbose )
+        console.log( {
+            CWD: CWD,
+            __dirname: __dirname,
+            EXEC_PATH: EXEC_PATH,
+            OF_PATH: OF_PATH,
+            OUTPUT_PATH: OUTPUT_PATH,
+            OUTPUT_NAME: OUTPUT_NAME,
+            TEMP_PATH: TEMP_PATH,
+            ARGS: ARGS,
+        } )
 
     /********************* Start process **************************/
 
+    // Copy library here
+    const TEMP_OF_PATH = path.join( TEMP_OUTPUT_PATH, path.basename( OF_PATH ) );
+    if ( !!ARGS.library ) {
+        console.log( chalk.bold( 'Copying openFrameworks library...' ) );
+        
+        const avoid = [
+            'examples',
+            'addons',
+            'apps'
+        ]
+
+        // Copy all directories except ones in array.
+        copyTargetDirectory( OF_PATH, TEMP_OF_PATH, { filter: dir => { return !avoid.some( e => dir.includes( e ) ); } } );
+
+    }
+
+    //
+
+    const PROJECT_PATH = ARGS.library ?
+        path.join( TEMP_OF_PATH, 'apps', OUTPUT_NAME ) :
+        TEMP_OUTPUT_PATH
     
     TARGETS.forEach( ( target ) => {
         
@@ -83,12 +126,12 @@ async function init() {
         
         // Copy whole project directory to output directory
         console.log( chalk.bold( 'Copying directory...' ) );
-        const targetOutputPath = path.join( TEMP_OUTPUT_PATH, target.NAME )
+        const targetOutputPath = path.join( PROJECT_PATH, target.NAME )
         try {
             copyTargetDirectory( target.PATH, targetOutputPath );
         } catch ( e ) {
             console.log( chalk.red.bold( e.message ) );
-            if ( fs.pathExistsSync( TEMP_OUTPUT_PATH ) ) fs.rmSync( TEMP_OUTPUT_PATH, { recursive: true } )
+            cleanUp( TEMP_PATH );
             return;
         }
 
@@ -101,28 +144,49 @@ async function init() {
         
         // Copy global addon if found in local global folder.
         console.log( chalk.bold( 'Copying global addons...') );
-        const copiedAddons = copyAddons( processedAddons, targetOutputPath );
+        const addonsToCopy = processedAddons.filter( addon => addon.found && !addon.local )
+        const copiedAddons = copyAddons( addonsToCopy,
+            !!ARGS.library ?
+                path.join( TEMP_OF_PATH, 'addons' ) :
+                path.join( targetOutputPath, 'local_addons' ) );
 
-        // Replace text in addons.make
-        console.log( chalk.bold( 'Updating addons.make...') );
-        updateAddonsMake( copiedAddons, addonsMakePath )
+        if ( !ARGS.library ) {
+            // Replace text in addons.make
+            console.log( chalk.bold( 'Updating addons.make...') );
+            updateAddonsMake( copiedAddons, addonsMakePath )
+        }
 
     } )
 
     console.log();
 
-    console.log( chalk.bold( 'Moving temp to output directory...' ) );
-    fs.moveSync( TEMP_OUTPUT_PATH, OUTPUT_PATH, { overwrite: true } );
+    let moveSrc = TEMP_OUTPUT_PATH;
+    let moveDest = OUTPUT_PATH;
 
     if ( !!ARGS.compress ) {
 
         console.log( chalk.bold( 'Compressing ofpkg...' ) );
-        await compressDirectory( OUTPUT_PATH, OUTPUT_NAME )
+        const zipPath = await compressDirectory(
+            // path.join( ARGS.library ? TEMP_OF_PATH : PROJECT_PATH ),
+            TEMP_OUTPUT_PATH,
+            TEMP_PATH,
+            OUTPUT_NAME
+        )
 
-        console.log( chalk.bold( 'Removing temp directories...' ) );
-        fs.rmSync( OUTPUT_PATH, { recursive: true } )
+        fs.emptyDirSync( TEMP_OUTPUT_PATH );
+        // fs.moveSync( zipPath, path.join( TEMP_OUTPUT_PATH, path.basename( zipPath ) ) );
+
+        moveSrc = zipPath;
+        cleanUp( moveDest );
+        moveDest = path.join( path.dirname( moveDest ), path.basename( zipPath ) );
 
     }
+    
+    console.log( chalk.bold( 'Moving to output...\n'), moveDest );
+    fs.moveSync( moveSrc, moveDest, { overwrite: ARGS.replace || moveDest.includes( 'ofpkg' ) } );
+
+    console.log( chalk.bold( 'Cleaning up...' ) );
+    cleanUp( TEMP_PATH );
 
     console.log( chalk.bold( 'Done!' ) );
 
@@ -131,7 +195,7 @@ async function init() {
     function updateAddonsMake( copiedAddons, addonsMakePath ) {
 
         const replaceFrom = copiedAddons.map( addon => addon.name );
-        const replaceTo = copiedAddons.map( addon => addon.text );
+        const replaceTo = copiedAddons.map( addon => path.join( 'local_addons', addon.name ) );
         
         try {
             const results = replace.sync( {
@@ -148,26 +212,25 @@ async function init() {
 
     }
 
-    function copyAddons( addons, targetOutputPath ) {
+    function copyAddons( addonsToCopy, targetOutputPath ) {
 
-        addons.forEach( ( addon ) => {
-            
-            if ( !addon.found || addon.local ) return;
+        addonsToCopy.forEach( ( addon ) => {
 
             const src = addon.src;
-            const dest = path.join( targetOutputPath, 'local_addons', addon.name );
+            const dest = path.join( targetOutputPath, addon.name );
             fs.copySync( src, dest );
-            addon.text = path.join( 'local_addons', addon.name );
+            
 
         } )
 
-        return addons.filter( addon => addon.found && !addon.local )
+        return addonsToCopy
 
     }
 
-    async function compressDirectory( path, name = 'ofpkg' ) {
+    async function compressDirectory( srcPath, destPath, name = 'ofpkg' ) {
 
-        const output = fs.createWriteStream( name + '.zip' );
+        const zipPath = path.join( destPath, name + '.zip' );
+        const output = fs.createWriteStream( zipPath );
         const archive = archiver( 'zip' );
 
         output.on( 'close', () => {
@@ -177,8 +240,10 @@ async function init() {
         archive.on( 'error', ( err ) => { throw err } );
 
         archive.pipe( output );
-        archive.directory( path, name );
+        archive.directory( srcPath, name );
         await archive.finalize();
+
+        return zipPath;
 
     }
 
@@ -265,11 +330,9 @@ async function init() {
 
     }
 
-    function copyTargetDirectory( srcPath, destPath ) {
+    function copyTargetDirectory( srcPath, destPath, opts ) {
 
-        const srcExists = fs.pathExistsSync( srcPath );
-
-        if ( !srcExists )
+        if ( !fs.pathExistsSync( srcPath ) )
             throw new Error( 'Could not find target directory!\nYou can also target the current directory by running ofpkg without any arguments.' );
 
         // Set up directory for ofpkg
@@ -277,10 +340,7 @@ async function init() {
         fs.emptyDirSync( destPath );
 
         // Copy project into pkg directory
-        fs.copySync( srcPath, destPath, { filter: ( e ) => !e.includes( 'ofpkg' ) } );
-
-        // Move if destPath == srcPath || '.'
-        // fs.moveSync( srcPath, destPath, { overwrite: true } )
+        fs.copySync( srcPath, destPath, opts );
 
         return false;
 
@@ -304,6 +364,7 @@ async function init() {
             { name: 'include', alias: 'i', type: String, multiple: true },
             { name: 'output', alias: 'o', type: String },
             { name: 'compress', alias: 'c', type: Boolean },
+            { name: 'replace', alias: 'r', type: Boolean },
         ]
 
         return commandLineArgs( claOptions );
@@ -329,6 +390,18 @@ async function init() {
             return err;
         }
 
+    }
+
+    function cleanUp( path ) {
+
+        if ( fs.pathExistsSync( path ) ) fs.rmSync( path, { recursive: true } )
+
+    }
+
+    function panic( err ) {
+        console.error( err.message );
+        cleanUp( TEMP_PATH );
+        process.exit();
     }
 
     // https://stackoverflow.com/questions/15900485/correct-way-to-convert-size-in-bytes-to-kb-mb-gb-in-javascript
