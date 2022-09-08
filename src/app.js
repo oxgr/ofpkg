@@ -14,13 +14,13 @@ const { Console } = require( 'console' );
 
 init();
 
-function init() {
+async function init() {
 
     // console.log( 'Hi ofpkg!' );
     console.log( `   
-        ┌─┐┌─┐┌─┐┬┌─┌─┐
-        │ │├┤ ├─┘├┴┐│ ┬
-        └─┘└  ┴  ┴ ┴└─┘
+    ┌─┐┌─┐┌─┐┬┌─┌─┐
+    │ │├┤ ├─┘├┴┐│ ┬
+    └─┘└  ┴  ┴ ┴└─┘
     `);
 
     // ┌┐
@@ -65,7 +65,7 @@ function init() {
 
     } )
 
-    const OUTPUT_NAME = path.basename( ARGS.output ) || TARGETS.length == 1 ? TARGETS[ 0 ].NAME : 'ofpkg'
+    const OUTPUT_NAME = path.basename( ARGS.output ) || TARGETS.length == 1 ? TARGETS[ 0 ].NAME + '-ofpkg' : 'ofpkg'
     const OUTPUT_PATH = ARGS.output || path.join( CWD, OUTPUT_NAME );
 
     fs.ensureDirSync( OUTPUT_PATH );
@@ -79,14 +79,17 @@ function init() {
 
         console.log( '\n', chalk.bold.yellow( target.NAME ), '\n' );
 
+        const targetOutputPath = path.join( OUTPUT_PATH, target.NAME )
+
         try {
-            copyTargetDirectory( target.PATH, path.join( OUTPUT_PATH, target.NAME ) );
+            copyTargetDirectory( target.PATH, targetOutputPath );
         } catch ( e ) {
             console.log( chalk.red.bold( e.message ) );
             if ( fs.pathExistsSync( OUTPUT_PATH ) ) fs.rmSync( OUTPUT_PATH, { recursive: true } )
             return;
         }
-        const addons = processAddons( path.join( OUTPUT_PATH, target.NAME ), OF_PATH, { copy: true } );
+
+        const addons = processAddons( targetOutputPath, OF_PATH, { copy: true } );
 
         // Copy global addon if found in local global folder.
         addons.forEach( ( addon ) => {
@@ -94,7 +97,7 @@ function init() {
             if ( addon.found && !addon.local ) {
 
                 const src = addon.src;
-                const dest = path.join( OUTPUT_PATH, 'local_addons', addon.name );
+                const dest = path.join( targetOutputPath, 'local_addons', addon.name );
                 fs.copySync( src, dest );
 
                 addon.text = path.join( 'local_addons', addon.name );
@@ -108,12 +111,10 @@ function init() {
     if ( !!ARGS.compress ) {
 
         console.log( chalk.bold( 'Compressing ofpkg...' ) );
-        compressDirectory( OUTPUT_PATH, OUTPUT_NAME )
-            .then( () => {
-                console.log( chalk.bold( 'Removing leftover directories...' ) );
-                fs.rmSync( OUTPUT_PATH, { recursive: true } )
-            } )
+        await compressDirectory( OUTPUT_PATH, OUTPUT_NAME )
 
+        console.log( chalk.bold( 'Removing temp directories...' ) );
+        fs.rmSync( OUTPUT_PATH, { recursive: true } )
 
     }
 
@@ -208,13 +209,11 @@ function init() {
         results.filter( e => e.found ).forEach( e => {
             console.log( chalk.green( e.name ) );
         } )
-        console.log();
 
         console.log( chalk.bold( 'Missing addons:' ) );
         results.filter( e => !e.found ).forEach( e => {
             console.log( chalk.red( e.name ) );
         } )
-        console.log();
 
         return results;
 
