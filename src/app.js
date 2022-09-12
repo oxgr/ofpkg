@@ -30,6 +30,8 @@ async function init() {
     // Process arguments
     const ARGS = getArgs();
 
+    console.log( ARGS );
+
     const TARGETS = ARGS.targets.map( target => {
 
         const PATH = target && target != '.' ? target : CWD;
