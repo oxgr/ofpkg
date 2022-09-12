@@ -2,10 +2,10 @@
   "name": "ofpkg",
   "version": "0.1.0",
   "description": "A CLI tool to package an openFrameworks project along with necessary addons and optionally, the whole openFrameworks library.",
-  "main": "src/app.js",
-  "bin": "src/app.js",
+  "main": "src/index.js",
+  "bin": "src/index.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "node src/index.js",
     "build": "pkg .",
     "buildRun": "pkg . && ./dist/ofpkg",
     "buildTest": "npm run build && npm run test",
