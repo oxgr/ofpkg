@@ -24,9 +24,9 @@ async function init() {
     const ARGS = getArgs();
 
     if ( Object.entries( ARGS ) == 0 ) {
-        console.log( chalk.bold( 'No arguments entered.\n') );
-        console.log( chalk.bold( 'To package this directory, run `ofpkg .`\n') );
-        console.log( chalk.bold( 'For more information, run `ofpkg --help`.') );
+        console.log( 'No arguments entered.\n');
+        console.log( 'To package this directory, run', chalk.bold( 'ofpkg .\n' ));
+        console.log( 'For more information, run', chalk.bold( 'ofpkg --help\n' ) );
         return
     }
 
