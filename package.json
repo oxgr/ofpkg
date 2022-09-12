@@ -18,7 +18,7 @@
     "assets": [
       "./ofpkg.config.json"
     ],
-    "outputPath": "dist/"
+    "outputPath": "dist/bin/"
   },
   "keywords": [
     "openFrameworks",
