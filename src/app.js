@@ -4,33 +4,40 @@ const commandLineArgs = require( 'command-line-args' );
 const chalk = require( 'chalk' );
 const archiver = require( 'archiver' );
 const replace = require( 'replace-in-file' );
-const { exit } = require( 'process' );
 
 init();
 
 async function init() {
 
-    // console.log( 'Hi ofpkg!' );
-    console.log( `   
-    ┌─┐┌─┐┌─┐┬┌─┌─┐
-    │ │├┤ ├─┘├┴┐│ ┬
-    └─┘└  ┴  ┴ ┴└─┘
-    `);
-
     // Global paths
     const CWD = process.cwd();
     const EXEC_PATH = path.dirname( path.dirname( process.execPath ) );
-    const TEMP_PATH = path.join( EXEC_PATH, 'temp' );
+    const OFPKG_PATH = path.join( process.env.HOME, '.ofpkg' );
+    const TEMP_PATH = path.join( OFPKG_PATH, 'temp' );
     fs.ensureDirSync( TEMP_PATH );
 
     // Get config
-    const configPath = path.join( __dirname, '..', 'ofpkg.config.json' );
+    const configPath = path.join( OFPKG_PATH, 'ofpkg.config.json' );
     const { OF_PATH } = getConfig( configPath );
 
     // Process arguments
     const ARGS = getArgs();
 
-    console.log( ARGS );
+    if ( Object.entries( ARGS ) == 0 ) {
+        console.log( chalk.bold( 'No arguments entered.\n') );
+        console.log( chalk.bold( 'To package this directory, run `ofpkg .`\n') );
+        console.log( chalk.bold( 'For more information, run `ofpkg --help`.') );
+        return
+    }
+
+    if ( ARGS.verbose ) {
+        // console.log( 'Hi ofpkg!' );
+    console.log( `   
+    ┌─┐┌─┐┌─┐┬┌─┌─┐
+    │ │├┤ ├─┘├┴┐│ ┬
+    └─┘└  ┴  ┴ ┴└─┘
+    `);
+    }
 
     const TARGETS = ARGS.targets.map( target => {
 
@@ -81,7 +88,7 @@ async function init() {
     // - Use the --replace flag to overwrite an existing directory.
     //     `));
     // }
-    fs.ensureDirSync( OUTPUT_PATH );
+    // fs.ensureDirSync( OUTPUT_PATH );
 
     const TEMP_OUTPUT_PATH = path.join( TEMP_PATH, OUTPUT_NAME );
     fs.ensureDirSync( TEMP_OUTPUT_PATH );
@@ -90,7 +97,7 @@ async function init() {
         console.log( {
             CWD: CWD,
             __dirname: __dirname,
-            EXEC_PATH: EXEC_PATH,
+            OFPKG_PATH: OFPKG_PATH,
             OF_PATH: OF_PATH,
             OUTPUT_PATH: OUTPUT_PATH,
             OUTPUT_NAME: OUTPUT_NAME,
@@ -112,7 +119,7 @@ async function init() {
         ]
 
         // Copy all directories except ones in array.
-        copyTargetDirectory( OF_PATH, TEMP_OF_PATH, { filter: dir => { return !avoid.some( e => dir.includes( e ) ); } } );
+        copyTargetDirectory( OF_PATH, TEMP_OF_PATH, { filter: dir => !avoid.some( e => dir.includes( e ) ) } );
 
     }
 
@@ -127,7 +134,7 @@ async function init() {
         console.log( '\n', chalk.bold.yellow( target.NAME ) );
         
         // Copy whole project directory to output directory
-        console.log( chalk.bold( 'Copying directory...' ) );
+        console.log( chalk.bold( 'Copying project...' ) );
         const targetOutputPath = path.join( PROJECT_PATH, target.NAME )
         try {
             copyTargetDirectory( target.PATH, targetOutputPath );
@@ -137,6 +144,10 @@ async function init() {
             return;
         }
 
+        // Update OF_ROOT in config.make file
+        const configMakePath = path.join( targetOutputPath, 'config.make' );
+        const configMakeStr = updateConfigMake( configMakePath );
+
         // Scan addons from addons.make
         const addonsMakePath = path.join( targetOutputPath, 'addons.make' )
         const addons = getAddons( addonsMakePath );
@@ -145,7 +156,7 @@ async function init() {
         const processedAddons = processAddons( addons, targetOutputPath );
         
         // Copy global addon if found in local global folder.
-        console.log( chalk.bold( 'Copying global addons...') );
+        console.log( chalk.bold( 'Copying addons...') );
         const addonsToCopy = processedAddons.filter( addon => addon.found && !addon.local )
         const copiedAddons = copyAddons( addonsToCopy,
             !!ARGS.library ?
@@ -180,7 +191,7 @@ async function init() {
 
         moveSrc = zipPath;
         cleanUp( moveDest );
-        moveDest = path.join( path.dirname( moveDest ), path.basename( zipPath ) );
+        moveDest = path.join( fs.pathExistsSync( moveDest ) ? moveDest : path.dirname( moveDest ), path.basename( zipPath ) );
 
     }
     
@@ -209,6 +220,18 @@ async function init() {
         } catch (error) {
             console.error('Error occurred:', error);
         }
+
+        return false;
+
+    }
+
+    function updateConfigMake( configMakePath ) {
+
+        const results = replace.sync( {
+            files: configMakePath,
+            from: new RegExp( /(?<=(^OF_ROOT\ \=\ )).+/, 'm'),
+            to: path.join( '..', '..', '..' )
+        })
 
         return false;
 

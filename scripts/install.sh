@@ -3,11 +3,37 @@
 MAJOR="0"
 MINOR="1"
 PATCH="0"
+PWD=$(pwd)
+DIST="ofpkg-macos-x64"
 
-echo "Starting install..."
+if [ ! -d ${HOME}/.ofpkg/ ]
+then
+    echo "Installing at ${HOME}/.ofpkg"
+    mkdir ${HOME}/.ofpkg
+else
+    echo "~/.ofpkg already exists. Updating..."
+fi
 
-echo "curl echo.sh"
-bash <( curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/echo.sh )
+cd ${HOME}/.ofpkg
 
-echo "curl release"
-curl -o ofpkg https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/ofpkg-osx-x64
+echo "Downloading ofpkg..."
+curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/${DIST}.zip
+
+mkdir tmp
+unzip -qq ${DIST}.zip -d ./tmp
+cp -n ./tmp/ofpkg.config.json .
+cp -r ./tmp/bin .
+rm ${DIST}.zip
+rm -rf tmp
+
+cd ${PWD}
+
+echo "Done!"
+
+if [[ $PATH != *"ofpkg"* ]]; then
+    echo ""
+    echo "Please manually add ofpkg to your PATH variable by appending the following line to your shell profile."
+    echo ""
+    echo "PATH=\$PATH:\$HOME/.ofpkg/bin"
+    echo ""
+fi
