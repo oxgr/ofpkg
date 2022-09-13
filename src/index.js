@@ -1,5 +1,6 @@
 const fs = require( 'fs-extra' );
 const path = require( 'path' );
+const { exec, spawn, execSync, spawnSync } = require( 'child_process' );
 const commandLineArgs = require( 'command-line-args' );
 const commandLineUsage = require( 'command-line-usage' );
 const chalk = require( 'chalk' );
@@ -36,107 +37,32 @@ async function init() {
 
     if ( ARGS.help ) {
 
-        const header =`
-            ┌─┐┌─┐┌─┐┬┌─┌─┐
-            │ │├┤ ├─┘├┴┐│ ┬
-            └─┘└  ┴  ┴ ┴└─┘`
-
-        const sections = [
-            {
-                content: chalk.red( header ),
-                raw: true
-            },
-            {
-                header: '',
-                content: 'A CLI tool to package an openFrameworks project along with necessary addons and optionally, the whole openFrameworks library.'
-            },
-            {
-                header: 'Examples',
-                content: [
-                  '$ ofpkg [{bold --options}] {underline targets} ...   # Basic format.',
-                  '$ ofpkg {bold --library} {underline ./project}       # Include the library.',
-                  '$ ofpkg {bold -lcv} {underline ./foo} {underline ./bar}          # Use multiple flags and targets.',
-                  '$ ofpkg {underline .} {bold -o} {underline ./baz}                # Pass the current dir and output dir.',
-                  '$ ofpkg {bold --help}                    # Pass flags without arguments.'
-                ]
-            },
-            {
-                header: 'Options',
-                optionList: [
-                    {
-                        name: 'targets',
-                        alias: 't',
-                        type: String,
-                        typeLabel: '{underline directory} ...',
-                        description: 'The directory to package. Multiple allowed. (Default)'
-                    },
-                    {
-                        name: 'library',
-                        alias: 'l',
-                        type: Boolean,
-                        description: 'Include the oF library essentials defined in ~/.ofpkg/ofpkg.config.json.'
-                    },
-                    {
-                        name: 'compress',
-                        alias: 'c',
-                        type: Boolean,
-                        description: 'Compresses the final output to ~40% of the original size.'
-                    },
-                    {
-                        name: 'projgen',
-                        alias: 'p',
-                        type: Boolean,
-                        description: 'Includes the oF Project Generator source files (excluded by default).'
-                    },
-                    {
-                        name: 'output',
-                        alias: 'o',
-                        type: String,
-                        typeLabel: '{underline directory}',
-                        description: 'The directories to package.'
-                    },
-                    {
-                        name: 'replace',
-                        alias: 'r',
-                        type: Boolean,
-                        description: 'Force replaces all contents of the output directory.'
-                    },
-                    {
-                        name: 'verbose',
-                        alias: 'v',
-                        type: Boolean,
-                        description: 'Run with a verbose command line output.'
-                    },
-                    {
-                        name: 'version',
-                        alias: 'V',
-                        type: Boolean,
-                        description: 'Print the version number.'
-                    },
-                    {
-                        name: 'update',
-                        alias: 'u',
-                        type: Boolean,
-                        description: 'Update ofpkg to the latest version available.'
-                    },
-                    {
-                        name: 'help',
-                        alias: 'h',
-                        type: Boolean,
-                        description: 'Print this usage guide.'
-                    }
-                ]
-            }
-        ]
-
-        const usage = commandLineUsage( sections );
-        console.log( usage );
+        printUsageGuide();
         return;
 
     }
 
     if ( ARGS.version ) {
         console.log( `v${VERSION}` );
+        return;
+    }
+
+    if ( ARGS.update ) {
+        console.log( chalk.bold( 'Updating ofpkg...' ) );
+        // const curl = spawnSync( 'curl', [ 'https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh' ], { encoding: 'utf-8' } );
+        // console.log( curl.stdout );
+        // const { stdout, stderr } = exec( 'bash', [ curl.stdout ] );
+        // console.log( stdout.toString() );
+
+        // const bash = spawn( 'sh', [ curl.stdout ] );
+        // bash.stdout.on( 'data', data  => console.log( data ) );
+
+        const bash = exec( 'curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh | sh', ( err, stdout, stderr ) => {
+            console.log( stdout );
+        } );
+        // bash.stdout.on( 'data', data => console.log( data.toString() ) );
+        // bash.stderr.on( 'data', data => console.error( data.toString() ) );
+        // bash.on( 'close', data =>  console.log( bash.stdout, chalk.bold( 'Done!' ) ) );
         return;
     }
 
@@ -508,6 +434,106 @@ async function init() {
         const addons = buf.trim().split( '\n' );
 
         return addons;
+
+    }
+
+    function printUsageGuide() {
+
+        const header = `
+            ┌─┐┌─┐┌─┐┬┌─┌─┐
+            │ │├┤ ├─┘├┴┐│ ┬
+            └─┘└  ┴  ┴ ┴└─┘`
+
+        const sections = [
+            {
+                content: chalk.red( header ),
+                raw: true
+            },
+            {
+                header: '',
+                content: 'A CLI tool to package an openFrameworks project along with necessary addons and optionally, the whole openFrameworks library.'
+            },
+            {
+                header: 'Examples',
+                content: [
+                    '$ ofpkg [{bold --options}] {underline targets} ...   # Basic format.',
+                    '$ ofpkg {bold --library} {underline ./project}       # Include the library.',
+                    '$ ofpkg {bold -lcv} {underline ./foo} {underline ./bar}          # Use multiple flags and targets.',
+                    '$ ofpkg {underline .} {bold -o} {underline ./baz}                # Pass the current dir and output dir.',
+                    '$ ofpkg {bold --help}                    # Pass flags without arguments.'
+                ]
+            },
+            {
+                header: 'Options',
+                optionList: [
+                    {
+                        name: 'targets',
+                        alias: 't',
+                        type: String,
+                        typeLabel: '{underline path} ...',
+                        description: 'The directory to package. Multiple allowed. (Default)'
+                    },
+                    {
+                        name: 'library',
+                        alias: 'l',
+                        type: Boolean,
+                        description: 'Include the oF library essentials defined in ~/.ofpkg/ofpkg.config.json.'
+                    },
+                    {
+                        name: 'compress',
+                        alias: 'c',
+                        type: Boolean,
+                        description: 'Compresses the final output to ~40% of the original size.'
+                    },
+                    {
+                        name: 'projgen',
+                        alias: 'p',
+                        type: Boolean,
+                        description: 'Includes the oF Project Generator source files (excluded by default).'
+                    },
+                    {
+                        name: 'output',
+                        alias: 'o',
+                        type: String,
+                        typeLabel: '{underline path}',
+                        description: 'The directories to package.'
+                    },
+                    {
+                        name: 'replace',
+                        alias: 'r',
+                        type: Boolean,
+                        description: 'Force replaces all contents of the output directory.'
+                    },
+                    {
+                        name: 'verbose',
+                        alias: 'v',
+                        type: Boolean,
+                        description: 'Run with a verbose command line output.'
+                    },
+                    {
+                        name: 'version',
+                        alias: 'V',
+                        type: Boolean,
+                        description: 'Print the version number.'
+                    },
+                    {
+                        name: 'update',
+                        alias: 'u',
+                        type: Boolean,
+                        description: 'Update ofpkg to the latest version available.'
+                    },
+                    {
+                        name: 'help',
+                        alias: 'h',
+                        type: Boolean,
+                        description: 'Print this usage guide.'
+                    }
+                ]
+            }
+        ]
+
+        const usage = commandLineUsage( sections );
+        console.log( usage );
 
     }
 

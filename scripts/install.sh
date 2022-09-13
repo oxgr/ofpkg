@@ -11,12 +11,12 @@ then
     echo "Installing at ${HOME}/.ofpkg"
     mkdir ${HOME}/.ofpkg
 else
-    echo "~/.ofpkg already exists. Updating..."
+    echo "~/.ofpkg already exists."
 fi
 
 cd ${HOME}/.ofpkg
 
-echo "Downloading ofpkg..."
+echo "Downloading ofpkg@v${MAJOR}.${MINOR}.${PATCH}..."
 curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/${DIST}.zip
 
 mkdir tmp
