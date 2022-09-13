@@ -1,6 +1,6 @@
 const fs = require( 'fs-extra' );
 const path = require( 'path' );
-const { exec, spawn, execSync, spawnSync } = require( 'child_process' );
+const { spawn } = require( 'child_process' );
 const commandLineArgs = require( 'command-line-args' );
 const commandLineUsage = require( 'command-line-usage' );
 const chalk = require( 'chalk' );
@@ -36,10 +36,8 @@ async function init() {
     }
 
     if ( ARGS.help ) {
-
         printUsageGuide();
         return;
-
     }
 
     if ( ARGS.version ) {
@@ -49,10 +47,8 @@ async function init() {
 
     if ( ARGS.update ) {
         console.log( chalk.bold( 'Updating ofpkg...' ) );
-
         runInstallScript();
         return;
-
     }
 
     const TARGETS = ARGS.targets.map( target => {
