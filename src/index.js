@@ -50,15 +50,9 @@ async function init() {
     if ( ARGS.update ) {
         console.log( chalk.bold( 'Updating ofpkg...' ) );
 
-        const bash = exec( 'curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh | sh', ( err, stdout, stderr ) => {
-            if ( err ) panic( err );
-            console.log( stdout );
-            console.error( stderr )
-        } );
-        // bash.stdout.on( 'data', data => console.log( data.toString() ) );
-        // bash.stderr.on( 'data', data => console.error( data.toString() ) );
-        // bash.on( 'close', data =>  console.log( bash.stdout, chalk.bold( 'Done!' ) ) );
+        runInstallScript();
         return;
+
     }
 
     const TARGETS = ARGS.targets.map( target => {
@@ -529,6 +523,33 @@ async function init() {
 
         const usage = commandLineUsage( sections );
         console.log( usage );
+
+    }
+
+    function runInstallScript() {
+
+        // const sh = exec( 'curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh | sh', ( err, stdout, stderr ) => {
+        //     if ( err ) panic( err );
+        //     console.log( stdout );
+        //     console.error( stderr )
+        // } );
+
+        const curl = spawn( 'curl', [ '-s', 'https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh', '|', 'sh' ], { encoding: 'utf-8' } );
+        const sh = spawn( 'sh', [], { encoding: 'utf-8' } );
+
+        curl.stdout.on( 'data', data => sh.stdin.write( data.toString() ) );
+        curl.stderr.on( 'data', data => console.error( data.toString() ) );
+        // curl.on( 'close', data => console.log( chalk.bold( 'curl done' ) ) );
+
+        sh.stdout.on( 'data', data => {
+            const str = data.toString();
+            console.log( str );
+            if ( str.includes( 'Done' ) ) sh.kill();
+        } );
+        sh.stderr.on( 'data', data => console.error( data.toString() ) );
+        // sh.on( 'close', data => console.log( chalk.bold( 'sh done' ) ) );
+
+        return;
 
     }
 

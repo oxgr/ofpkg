@@ -16,7 +16,7 @@ cd ${HOME}/.ofpkg
 echo "Downloading ofpkg@v${MAJOR}.${MINOR}.${PATCH}..."
 curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/${DIST}.zip
 
-echo "Installing at ${HOME}/.ofpkg"
+echo "Installing at ${HOME}/.ofpkg ..."
 
 mkdir tmp
 unzip -qq ${DIST}.zip -d ./tmp
