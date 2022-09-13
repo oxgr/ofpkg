@@ -49,16 +49,11 @@ async function init() {
 
     if ( ARGS.update ) {
         console.log( chalk.bold( 'Updating ofpkg...' ) );
-        // const curl = spawnSync( 'curl', [ 'https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh' ], { encoding: 'utf-8' } );
-        // console.log( curl.stdout );
-        // const { stdout, stderr } = exec( 'bash', [ curl.stdout ] );
-        // console.log( stdout.toString() );
-
-        // const bash = spawn( 'sh', [ curl.stdout ] );
-        // bash.stdout.on( 'data', data  => console.log( data ) );
 
         const bash = exec( 'curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/install.sh | sh', ( err, stdout, stderr ) => {
+            if ( err ) panic( err );
             console.log( stdout );
+            console.error( stderr )
         } );
         // bash.stdout.on( 'data', data => console.log( data.toString() ) );
         // bash.stderr.on( 'data', data => console.error( data.toString() ) );

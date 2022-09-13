@@ -8,16 +8,15 @@ DIST="ofpkg-macos-x64"
 
 if [ ! -d ${HOME}/.ofpkg/ ]
 then
-    echo "Installing at ${HOME}/.ofpkg"
     mkdir ${HOME}/.ofpkg
-else
-    echo "~/.ofpkg already exists."
 fi
 
 cd ${HOME}/.ofpkg
 
 echo "Downloading ofpkg@v${MAJOR}.${MINOR}.${PATCH}..."
 curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/${DIST}.zip
+
+echo "Installing at ${HOME}/.ofpkg"
 
 mkdir tmp
 unzip -qq ${DIST}.zip -d ./tmp
