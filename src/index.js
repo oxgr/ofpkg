@@ -1,6 +1,7 @@
 const fs = require( 'fs-extra' );
 const path = require( 'path' );
 const commandLineArgs = require( 'command-line-args' );
+const commandLineUsage = require( 'command-line-usage' );
 const chalk = require( 'chalk' );
 const archiver = require( 'archiver' );
 const replace = require( 'replace-in-file' );
@@ -9,16 +10,16 @@ init();
 
 async function init() {
 
-    
+
     // Global paths
     const CWD = process.cwd();
     const EXEC_PATH = path.dirname( path.dirname( process.execPath ) );
     const OFPKG_PATH = path.join( process.env.HOME, '.ofpkg' );
     const TEMP_PATH = path.join( OFPKG_PATH, 'temp' );
     fs.ensureDirSync( TEMP_PATH );
-    
+
     const VERSION = require( path.join( __dirname, '..', 'package.json' ) ).version;
-    
+
     // Get config
     const configPath = path.join( OFPKG_PATH, 'ofpkg.config.json' );
     const { OF_PATH } = getConfig( configPath );
@@ -27,18 +28,111 @@ async function init() {
     const ARGS = getArgs();
 
     if ( Object.entries( ARGS ) == 0 ) {
-        console.log( 'No arguments entered.\n');
-        console.log( 'To package this directory, run', chalk.bold( 'ofpkg .\n' ));
+        console.log( 'No arguments entered.\n' );
+        console.log( 'To package this directory, run', chalk.bold( 'ofpkg .\n' ) );
         console.log( 'For more information, run', chalk.bold( 'ofpkg --help\n' ) );
-        return
+        return;
     }
 
-    if ( ARGS.verbose ) {
-    console.log( `   
-    ┌─┐┌─┐┌─┐┬┌─┌─┐
-    │ │├┤ ├─┘├┴┐│ ┬
-    └─┘└  ┴  ┴ ┴└─┘
-    `);
+    if ( ARGS.help ) {
+
+        const header =`
+            ┌─┐┌─┐┌─┐┬┌─┌─┐
+            │ │├┤ ├─┘├┴┐│ ┬
+            └─┘└  ┴  ┴ ┴└─┘`
+
+        const sections = [
+            {
+                content: chalk.red( header ),
+                raw: true
+            },
+            {
+                header: '',
+                content: 'A CLI tool to package an openFrameworks project along with necessary addons and optionally, the whole openFrameworks library.'
+            },
+            {
+                header: 'Examples',
+                content: [
+                  '$ ofpkg [{bold --options}] {underline targets} ...   # Basic format.',
+                  '$ ofpkg {bold --library} {underline ./project}       # Include the library.',
+                  '$ ofpkg {bold -lcv} {underline ./foo} {underline ./bar}          # Use multiple flags and targets.',
+                  '$ ofpkg {underline .} {bold -o} {underline ./baz}                # Pass the current dir and output dir.',
+                  '$ ofpkg {bold --help}                    # Pass flags without arguments.'
+                ]
+            },
+            {
+                header: 'Options',
+                optionList: [
+                    {
+                        name: 'targets',
+                        alias: 't',
+                        type: String,
+                        typeLabel: '{underline directory} ...',
+                        description: 'The directory to package. Multiple allowed. (Default)'
+                    },
+                    {
+                        name: 'library',
+                        alias: 'l',
+                        type: Boolean,
+                        description: 'Include the oF library essentials defined in ~/.ofpkg/ofpkg.config.json.'
+                    },
+                    {
+                        name: 'compress',
+                        alias: 'c',
+                        type: Boolean,
+                        description: 'Compresses the final output to ~40% of the original size.'
+                    },
+                    {
+                        name: 'projgen',
+                        alias: 'p',
+                        type: Boolean,
+                        description: 'Includes the oF Project Generator source files (excluded by default).'
+                    },
+                    {
+                        name: 'output',
+                        alias: 'o',
+                        type: String,
+                        typeLabel: '{underline directory}',
+                        description: 'The directories to package.'
+                    },
+                    {
+                        name: 'replace',
+                        alias: 'r',
+                        type: Boolean,
+                        description: 'Force replaces all contents of the output directory.'
+                    },
+                    {
+                        name: 'verbose',
+                        alias: 'v',
+                        type: Boolean,
+                        description: 'Run with a verbose command line output.'
+                    },
+                    {
+                        name: 'version',
+                        alias: 'V',
+                        type: Boolean,
+                        description: 'Print the version number.'
+                    },
+                    {
+                        name: 'update',
+                        alias: 'u',
+                        type: Boolean,
+                        description: 'Update ofpkg to the latest version available.'
+                    },
+                    {
+                        name: 'help',
+                        alias: 'h',
+                        type: Boolean,
+                        description: 'Print this usage guide.'
+                    }
+                ]
+            }
+        ]
+
+        const usage = commandLineUsage( sections );
+        console.log( usage );
+        return;
+
     }
 
     if ( ARGS.version ) {
@@ -67,17 +161,17 @@ async function init() {
      * 3. ofpkg
      */
     const OUTPUT_NAME =
-        ARGS.output ? 
+        ARGS.output ?
             fs.pathExistsSync( ARGS.output ) ?
-                path.basename( ARGS.output ) + '-ofpkg' :    
+                path.basename( ARGS.output ) + '-ofpkg' :
                 path.basename( ARGS.output ) :
             TARGETS.length == 1 ?
                 TARGETS[ 0 ].NAME + '-ofpkg' :
                 'ofpkg'
 
-            // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
+    // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
 
-    const OUTPUT_PATH = 
+    const OUTPUT_PATH =
         ARGS.output ?
             fs.pathExistsSync( ARGS.output ) ?
                 ARGS.replace ?
@@ -85,8 +179,8 @@ async function init() {
                     path.join( ARGS.output, OUTPUT_NAME ) :
                 ARGS.output :
             path.join( CWD, OUTPUT_NAME );
-            
-            // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
+
+    // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
     // if ( !ARGS.replace && fs.pathExistsSync( ARGS.output ) ) {
     //     panic( Error(`
     // ${chalk.bold.red( 'Error: Output directory provided already exists!' ) }
@@ -118,7 +212,7 @@ async function init() {
     const TEMP_OF_PATH = path.join( TEMP_OUTPUT_PATH, path.basename( OF_PATH ) );
     if ( !!ARGS.library ) {
         console.log( chalk.bold( 'Copying openFrameworks library...' ) );
-        
+
         const avoid = [
             'examples',
             'addons',
@@ -137,11 +231,11 @@ async function init() {
     const PROJECT_PATH = ARGS.library ?
         path.join( TEMP_OF_PATH, 'apps', OUTPUT_NAME ) :
         TEMP_OUTPUT_PATH
-    
+
     TARGETS.forEach( ( target ) => {
-        
+
         console.log( '\n', chalk.bold.yellow( target.NAME ) );
-        
+
         // Copy whole project directory to output directory
         console.log( chalk.bold( 'Copying project...' ) );
         const targetOutputPath = path.join( PROJECT_PATH, target.NAME )
@@ -163,9 +257,9 @@ async function init() {
 
         // Generate array of objects with addon data
         const processedAddons = processAddons( addons, targetOutputPath );
-        
+
         // Copy global addon if found in local global folder.
-        console.log( chalk.bold( 'Copying addons...') );
+        console.log( chalk.bold( 'Copying addons...' ) );
         const addonsToCopy = processedAddons.filter( addon => addon.found && !addon.local )
         const copiedAddons = copyAddons( addonsToCopy,
             !!ARGS.library ?
@@ -174,7 +268,7 @@ async function init() {
 
         if ( !ARGS.library ) {
             // Replace text in addons.make
-            console.log( chalk.bold( 'Updating addons.make...') );
+            console.log( chalk.bold( 'Updating addons.make...' ) );
             updateAddonsMake( copiedAddons, addonsMakePath )
         }
 
@@ -203,8 +297,8 @@ async function init() {
         moveDest = path.join( fs.pathExistsSync( moveDest ) ? moveDest : path.dirname( moveDest ), path.basename( zipPath ) );
 
     }
-    
-    console.log( chalk.bold( 'Moving to output...\n'), moveDest );
+
+    console.log( chalk.bold( 'Moving to output...\n' ), moveDest );
     fs.moveSync( moveSrc, moveDest, { overwrite: ARGS.replace || moveDest.includes( 'ofpkg' ) } );
 
     console.log( chalk.bold( 'Cleaning up...' ) );
@@ -218,16 +312,16 @@ async function init() {
 
         const replaceFrom = copiedAddons.map( addon => addon.name );
         const replaceTo = copiedAddons.map( addon => path.join( 'local_addons', addon.name ) );
-        
+
         try {
             const results = replace.sync( {
                 files: addonsMakePath,
                 from: replaceFrom,
                 to: replaceTo
-            })
+            } )
             // if ( !!ARGS.verbose ) console.log( 'Replacement results:', results );
-        } catch (error) {
-            console.error('Error occurred:', error);
+        } catch ( error ) {
+            console.error( 'Error occurred:', error );
         }
 
         return false;
@@ -238,9 +332,9 @@ async function init() {
 
         const results = replace.sync( {
             files: configMakePath,
-            from: new RegExp( /(?<=(^OF_ROOT\ \=\ )).+/, 'm'),
+            from: new RegExp( /(?<=(^OF_ROOT\ \=\ )).+/, 'm' ),
             to: path.join( '..', '..', '..' )
-        })
+        } )
 
         return false;
 
@@ -253,7 +347,7 @@ async function init() {
             const src = addon.src;
             const dest = path.join( targetOutputPath, addon.name );
             fs.copySync( src, dest );
-            
+
 
         } )
 
@@ -345,7 +439,7 @@ async function init() {
             results.filter( e => e.found ).forEach( e => {
                 console.log( chalk.green( e.name ) );
             } )
-    
+
             console.log( chalk.bold( 'Missing addons:' ) );
             results.filter( e => !e.found ).forEach( e => {
                 console.log( chalk.red( e.name ) );
@@ -393,14 +487,15 @@ async function init() {
 
         const claOptions = [
             { name: 'targets', alias: 't', type: String, defaultOption: true, multiple: true },
-            { name: 'verbose', alias: 'v', type: Boolean },
             { name: 'library', alias: 'l', type: Boolean },
-            { name: 'projgen', alias: 'p', type: Boolean },
-            { name: 'version', alias: 'V', type: Boolean },
-            // { name: 'include', alias: 'i', type: String, multiple: true },
-            { name: 'output', alias: 'o', type: String },
             { name: 'compress', alias: 'c', type: Boolean },
+            { name: 'projgen', alias: 'p', type: Boolean },
+            { name: 'output', alias: 'o', type: String },
             { name: 'replace', alias: 'r', type: Boolean },
+            { name: 'verbose', alias: 'v', type: Boolean },
+            { name: 'version', alias: 'V', type: Boolean },
+            { name: 'update', alias: 'u', type: Boolean },
+            { name: 'help', alias: 'h', type: Boolean },
         ]
 
         return commandLineArgs( claOptions );

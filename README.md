@@ -16,16 +16,18 @@ ofpkg <input> [options]
   ofpkg ./project         # Default passed arguments are directories to package.
   ofpkg ./foo ./bar       # You can also package multiple related projects together.
   ofpkg .                 # Easily package the current working directory.
-  ofpkg . -o ./output     # Define the output directory with the --output flag.
+  ofpkg . -o ./output     # Define the output **directory** with the --output flag.
   
   Options:
-  --library    #    -l    # Includes the oF library essentials defined in ~/.ofpkg/ofpkg.config.json.
-  --compress   #    -c    # Compresses the final output to ~40% of the original size.
-  --projgen    #    -p    # Includes the oF Project Generator source files (excluded by default).
+  --library    #    -l    # Include the oF library essentials defined in ~/.ofpkg/ofpkg.config.json.
+  --compress   #    -c    # Compress the final output to ~40% of the original size.
+  --projgen    #    -p    # Include the oF Project Generator source files (excluded by default).
   --output     #    -o    # Next argument determines path for output directory.
-  --replace    #    -r    # Force replaces all contents of the output directory.
+  --replace    #    -r    # Force replace all contents of the output directory.
   --verbose    #    -v    # Run with a verbose command line output.
-  --help       #    -h    # Prints a usage guide.
+  --version    #    -V    # Print the version number.
+  --update     #    -u    # Update ofpkg to the latest version available
+  --help       #    -h    # Print a usage guide.
 ```
 
 ## Why?
