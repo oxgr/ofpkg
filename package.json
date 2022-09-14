@@ -16,7 +16,8 @@
       "node16-macos-x64"
     ],
     "assets": [
-      "./ofpkg.config.json"
+      "./data/ofpkg.config.json",
+      "./package.json"
     ],
     "outputPath": "dist/bin/"
   },

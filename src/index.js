@@ -14,16 +14,15 @@ async function init() {
 
     // Global paths
     const CWD = process.cwd();
-    const EXEC_PATH = path.dirname( path.dirname( process.execPath ) );
-    const OFPKG_PATH = path.join( process.env.HOME, '.ofpkg' );
-    const TEMP_PATH = path.join( OFPKG_PATH, 'temp' );
-    fs.ensureDirSync( TEMP_PATH );
+    // const EXEC_PATH = panicIfNotExists( path.dirname( path.dirname( process.execPath ) ) );
+    const APP_PATH = panicIfNotExists( path.join( process.env.HOME, '.ofpkg' ) );
+
+    const configPath = panicIfNotExists( path.join( APP_PATH, 'data', 'ofpkg.config.json' ) );
+    const { OF_PATH,
+        SERVER_OF_PATH,
+        NANCARROW_IP } = getConfig( configPath );
 
     const VERSION = require( path.join( __dirname, '..', 'package.json' ) ).version;
-
-    // Get config
-    const configPath = path.join( OFPKG_PATH, 'ofpkg.config.json' );
-    const { OF_PATH } = getConfig( configPath );
 
     // Process arguments
     const ARGS = getArgs();
@@ -53,7 +52,7 @@ async function init() {
 
     const TARGETS = ARGS.targets.map( target => {
 
-        const PATH = target && target != '.' ? target : CWD;
+        const PATH = target && target != '.' ? path.resolve( target ) : CWD;
         const NAME = ( path.basename( PATH ) );
 
         if ( ARGS.verbose ) console.log( '%s: %s', NAME, PATH );
@@ -71,51 +70,44 @@ async function init() {
      * 2. If there is only one target, "<targetName>-ofpkg"
      * 3. ofpkg
      */
-    const OUTPUT_NAME =
-        ARGS.output ?
+    const OUTPUT_NAME = ( () => {
+        return ARGS.output ?
             fs.pathExistsSync( ARGS.output ) ?
                 path.basename( ARGS.output ) + '-ofpkg' :
                 path.basename( ARGS.output ) :
             TARGETS.length == 1 ?
                 TARGETS[ 0 ].NAME + '-ofpkg' :
                 'ofpkg'
+    } )()
 
-    // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
-
-    const OUTPUT_PATH =
-        ARGS.output ?
+    const OUTPUT_PATH = ( () => {
+        return ARGS.output ?
             fs.pathExistsSync( ARGS.output ) ?
                 ARGS.replace ?
                     ARGS.output :
                     path.join( ARGS.output, OUTPUT_NAME ) :
                 ARGS.output :
             path.join( CWD, OUTPUT_NAME );
+    } )()
 
-    // ARGS.output[ ARGS.output.length - 1 ] == path.sep ?
-    // if ( !ARGS.replace && fs.pathExistsSync( ARGS.output ) ) {
-    //     panic( Error(`
-    // ${chalk.bold.red( 'Error: Output directory provided already exists!' ) }
-    // Fixes:
-    // - Set the --output to a new directory name.
-    // - Use the --replace flag to overwrite an existing directory.
-    //     `));
-    // }
-    // fs.ensureDirSync( OUTPUT_PATH );
+    const TEMP_PATH = path.join( APP_PATH, 'temp' );
+    fs.ensureDirSync( TEMP_PATH );
 
     const TEMP_OUTPUT_PATH = path.join( TEMP_PATH, OUTPUT_NAME );
     fs.ensureDirSync( TEMP_OUTPUT_PATH );
 
-    if ( ARGS.verbose )
+    if ( ARGS.verbose ) {
         console.log( {
             CWD: CWD,
             __dirname: __dirname,
-            OFPKG_PATH: OFPKG_PATH,
+            APP_PATH: APP_PATH,
             OF_PATH: OF_PATH,
             OUTPUT_PATH: OUTPUT_PATH,
             OUTPUT_NAME: OUTPUT_NAME,
             TEMP_PATH: TEMP_PATH,
             ARGS: ARGS,
         } )
+    }
 
     /********************* Start process **************************/
 
@@ -146,6 +138,8 @@ async function init() {
     TARGETS.forEach( ( target ) => {
 
         console.log( '\n', chalk.bold.yellow( target.NAME ) );
+
+        panicIfNotExists( target.PATH );
 
         // Copy whole project directory to output directory
         console.log( chalk.bold( 'Copying project...' ) );
@@ -371,9 +365,6 @@ async function init() {
 
     function copyTargetDirectory( srcPath, destPath, opts ) {
 
-        if ( !fs.pathExistsSync( srcPath ) )
-            throw new Error( 'Could not find source directory!\nSource: ', srcPath );
-
         // Set up directory for ofpkg
         fs.ensureDirSync( destPath );
         fs.emptyDirSync( destPath );
@@ -398,9 +389,11 @@ async function init() {
 
         const claOptions = [
             { name: 'targets', alias: 't', type: String, defaultOption: true, multiple: true },
+            { name: 'forceLocal', alias: 'f', type: Boolean },
             { name: 'library', alias: 'l', type: Boolean },
             { name: 'compress', alias: 'c', type: Boolean },
             { name: 'projgen', alias: 'p', type: Boolean },
+            { name: 'server', alias: 's', type: Boolean },
             { name: 'output', alias: 'o', type: String },
             { name: 'replace', alias: 'r', type: Boolean },
             { name: 'verbose', alias: 'v', type: Boolean },
@@ -567,8 +560,20 @@ async function init() {
 
     }
 
+    function panicIfNotExists( pathToCheck, message = '' ) {
+        if ( !fs.pathExistsSync( pathToCheck ) ) {
+            // ( err, e ) => {
+            //     if ( err ) panic( err.message + '\n' + message )
+            //     if ( !e ) 
+            // panic( `${chalk.bold.yellow( path.basename( pathToCheck ) )} not found at path: ${chalk.bold( pathToCheck )}\n${message}` )
+            panic( `File or directory does not exist:\n${chalk.bold( pathToCheck )}\n${message}` )
+            // }
+        }
+        return pathToCheck;
+    }
+
     function panic( err ) {
-        console.error( err.message );
+        console.error( chalk.bold.red( 'Error: ' ) + ( err.message || err ) );
         cleanUp( TEMP_PATH );
         process.exit();
     }
