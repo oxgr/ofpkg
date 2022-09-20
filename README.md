@@ -9,6 +9,10 @@ bash <( curl -s https://raw.githubusercontent.com/oxgr/ofpkg/main/scripts/instal
 
 You can also download [compiled binaries](https://github.com/oxgr/ofpkg/releases/).
 
+By default, the binaries are installed at `~/.ofpkg/bin`, so be sure to add that path to your PATH variable.
+
+Currently, only macOS is supported.
+
 ## Usage
 ```
 ofpkg <input> [options]
