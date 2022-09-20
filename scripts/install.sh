@@ -2,9 +2,9 @@
 
 MAJOR="0"
 MINOR="1"
-PATCH="4"
+PATCH="5"
 PWD=$(pwd)
-DIST="ofpkg-macos-x64"
+DIST="ofpkg-macos-x64-v${MAJOR}.${MINOR}.${PATCH}"
 
 if [ ! -d ${HOME}/.ofpkg/ ]
 then
