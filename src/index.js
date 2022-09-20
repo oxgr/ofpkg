@@ -22,7 +22,7 @@ async function init() {
     const VERSION = require( path.join( __dirname, '..', 'package.json' ) ).version;
 
     // Get config
-    const configPath = path.join( OFPKG_PATH, 'ofpkg.config.json' );
+    const configPath = path.join( OFPKG_PATH, 'data', 'ofpkg.config.json' );
     const { OF_PATH } = getConfig( configPath );
 
     // Process arguments

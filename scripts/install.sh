@@ -20,7 +20,7 @@ echo "Installing at ${HOME}/.ofpkg ..."
 
 mkdir tmp
 unzip -qq ${DIST}.zip -d ./tmp
-cp -n ./tmp/ofpkg.config.json .
+cp -n ./tmp/data .
 cp -r ./tmp/bin .
 rm ${DIST}.zip
 rm -rf tmp
