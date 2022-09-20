@@ -6,23 +6,14 @@ const commandLineUsage = require( 'command-line-usage' );
 const chalk = require( 'chalk' );
 const archiver = require( 'archiver' );
 const replace = require( 'replace-in-file' );
+const klawSync = require( 'klaw-sync' );
+const levCompare = require( 'js-levenshtein' );
 
 init();
 
 async function init() {
 
-
-    // Global paths
-    const CWD = process.cwd();
-    // const EXEC_PATH = panicIfNotExists( path.dirname( path.dirname( process.execPath ) ) );
-    const APP_PATH = panicIfNotExists( path.join( process.env.HOME, '.ofpkg' ) );
-
-    const configPath = panicIfNotExists( path.join( APP_PATH, 'data', 'ofpkg.config.json' ) );
-    const { OF_PATH,
-        SERVER_OF_PATH,
-        NANCARROW_IP } = getConfig( configPath );
-
-    const VERSION = require( path.join( __dirname, '..', 'package.json' ) ).version;
+    // if ( ARGS.verbose ) console.log( chalk.bold( ) );
 
     // Process arguments
     const ARGS = getArgs();
@@ -34,10 +25,28 @@ async function init() {
         return;
     }
 
+    if ( ARGS.verbose ) console.log( { ARGS: ARGS } );
+
     if ( ARGS.help ) {
         printUsageGuide();
         return;
     }
+
+    if ( ARGS.verbose ) console.log( chalk.bold( 'Setting global paths...' ) );
+
+    let TEMP_PATH;
+
+    // Global paths
+    const CWD = process.cwd();
+    // const EXEC_PATH = panicIfNotExists( path.dirname( path.dirname( process.execPath ) ) );
+    const APP_PATH = panicIfNotExists( path.join( process.env.HOME, '.ofpkg' ) );
+
+    const configPath = panicIfNotExists( path.join( APP_PATH, 'data', 'ofpkg.config.json' ) );
+    const { OF_PATH,
+        SERVER_OF_VERSIONS_PATH,
+        NANCARROW_IP } = getConfig( configPath );
+
+    const VERSION = require( path.join( __dirname, '..', 'package.json' ) ).version;
 
     if ( ARGS.version ) {
         console.log( `v${VERSION}` );
@@ -50,19 +59,40 @@ async function init() {
         return;
     }
 
+    if ( ARGS.verbose ) console.log( chalk.bold( 'Mapping targets...' ) );
+
     const TARGETS = ARGS.targets.map( target => {
 
-        const PATH = target && target != '.' ? path.resolve( target ) : CWD;
+        const PATH = path.resolve( target && target != '.' ? target : CWD );
         const NAME = ( path.basename( PATH ) );
 
-        if ( ARGS.verbose ) console.log( '%s: %s', NAME, PATH );
+        panicIfNotExists( PATH );
+
+        const OF = ( () => {
+
+            const configMakePath = path.join( PATH, 'config.make' );
+            const targetOfPath = path.resolve( PATH, getOfPath( configMakePath ) );
+            const ofVersion = targetOfPath.match( new RegExp( /(v\d+\.\d+.\d+)/g ) )[ 0 ];
+
+            return {
+                NAME: path.basename( targetOfPath ),
+                VERSION: ofVersion,
+                PATH: targetOfPath
+            }
+
+        } )()
 
         return {
             PATH: PATH,
             NAME: NAME,
+            OF: OF
         }
 
     } )
+
+    if ( ARGS.verbose ) console.log( TARGETS );
+
+    if ( ARGS.verbose ) console.log( chalk.bold( 'Setting output name and path.basename...' ) );
 
     /**
      * By order of priority:
@@ -90,11 +120,13 @@ async function init() {
             path.join( CWD, OUTPUT_NAME );
     } )()
 
-    const TEMP_PATH = path.join( APP_PATH, 'temp' );
+    TEMP_PATH = path.join( APP_PATH, 'temp' );
     fs.ensureDirSync( TEMP_PATH );
 
     const TEMP_OUTPUT_PATH = path.join( TEMP_PATH, OUTPUT_NAME );
     fs.ensureDirSync( TEMP_OUTPUT_PATH );
+
+    const TEMP_OF_PATH = path.join( TEMP_OUTPUT_PATH, path.basename( OF_PATH ) );
 
     if ( ARGS.verbose ) {
         console.log( {
@@ -105,15 +137,15 @@ async function init() {
             OUTPUT_PATH: OUTPUT_PATH,
             OUTPUT_NAME: OUTPUT_NAME,
             TEMP_PATH: TEMP_PATH,
-            ARGS: ARGS,
         } )
     }
 
     /********************* Start process **************************/
 
-    // Copy library here
-    const TEMP_OF_PATH = path.join( TEMP_OUTPUT_PATH, path.basename( OF_PATH ) );
+    // Library
+
     if ( !!ARGS.library ) {
+
         console.log( chalk.bold( 'Copying openFrameworks library...' ) );
 
         const avoid = [
@@ -129,27 +161,72 @@ async function init() {
 
     }
 
-    //
+    // Server 
 
-    const PROJECT_PATH = ARGS.library ?
-        path.join( TEMP_OF_PATH, 'apps', OUTPUT_NAME ) :
-        TEMP_OUTPUT_PATH
+    if ( ARGS.server && !ARGS.library ) {
+
+        const ofVersionsUsed = TARGETS.map( target => target.OF )
+        const existingVersions = fs.readdirSync( SERVER_OF_VERSIONS_PATH );
+        const ofVersionsToCopy = ofVersionsUsed
+            // Remove duplicates
+            .reduce( ( prev, curr ) => {
+                if ( !prev.some( of => of.VERSION === curr.VERSION ) ) {
+                    prev.push( curr );
+                }
+                return prev;
+            }, [] )
+            // Filter existing
+            .filter( of => {
+                const versionExists = existingVersions.some( existingName => existingName.includes( of.VERSION ) )
+                if ( !versionExists ) {
+                    console.log( of.VERSION, 'does not exist in server.' )
+                    return true;
+                }
+                return false;
+            } );
+
+        if ( ofVersionsToCopy.length > 0 ) {
+
+            if ( ARGS.verbose ) console.log( ofVersionsToCopy );
+
+            ofVersionsToCopy.forEach( of => {
+                console.log(
+                    'Copying', chalk.bold( of.NAME ),
+                    '\nFrom', chalk.bold.yellow( path.dirname( of.PATH ) ),
+                    '\nTo', chalk.bold.green( SERVER_OF_VERSIONS_PATH )
+                );
+                fs.copySync( of.PATH, path.join( SERVER_OF_VERSIONS_PATH, of.NAME ) )
+            } );
+
+            if ( ARGS.verbose ) console.log( chalk.bold( 'Done copying oF folders.' ) );
+
+        }
+
+
+        // ofVersionsToCheck.push( ofVersion );
+    }
+
+    // Projects
+
+    const PROJECTS_PATH = ( () => {
+        return ARGS.library ?
+            path.join( TEMP_OF_PATH, 'apps', OUTPUT_NAME ) :
+            TEMP_OUTPUT_PATH
+    } )()
 
     TARGETS.forEach( ( target ) => {
 
         console.log( '\n', chalk.bold.yellow( target.NAME ) );
 
-        panicIfNotExists( target.PATH );
-
         // Copy whole project directory to output directory
         console.log( chalk.bold( 'Copying project...' ) );
-        const targetOutputPath = path.join( PROJECT_PATH, target.NAME )
+        const targetOutputPath = path.join( PROJECTS_PATH, target.NAME );
+        const serverOfPath = path.join( SERVER_OF_VERSIONS_PATH, target.OF.NAME )
+
         try {
             copyTargetDirectory( target.PATH, targetOutputPath );
-        } catch ( e ) {
-            console.log( chalk.red.bold( e.message ) );
-            cleanUp( TEMP_PATH );
-            return;
+        } catch ( err ) {
+            panic( err );
         }
 
         // Update OF_ROOT in config.make file
@@ -158,28 +235,91 @@ async function init() {
 
         // Scan addons from addons.make
         const addonsMakePath = path.join( targetOutputPath, 'addons.make' )
-        const addons = getAddons( addonsMakePath );
+        const addonStrings = getAddons( addonsMakePath );
 
         // Generate array of objects with addon data
-        const processedAddons = processAddons( addons, targetOutputPath );
+        const processedAddons = processAddons( addonStrings, targetOutputPath );
 
-        // Copy global addon if found in local global folder.
-        console.log( chalk.bold( 'Copying addons...' ) );
-        const addonsToCopy = processedAddons.filter( addon => addon.found && !addon.local )
-        const copiedAddons = copyAddons( addonsToCopy,
-            !!ARGS.library ?
-                path.join( TEMP_OF_PATH, 'addons' ) :
-                path.join( targetOutputPath, 'local_addons' ) );
+        if ( ARGS.verbose ) {
+            const foundAddons = processedAddons.filter( e => e.found );
+            const missingAddons = processedAddons.filter( e => !e.found );
 
-        if ( !ARGS.library ) {
-            // Replace text in addons.make
-            console.log( chalk.bold( 'Updating addons.make...' ) );
-            updateAddonsMake( copiedAddons, addonsMakePath )
+            if ( !!ARGS.verbose ) {
+
+                console.log( chalk.bold( 'Found addons:' ) );
+                foundAddons.forEach( e => console.log( chalk.green( e.name ) ) );
+
+                console.log( chalk.bold( 'Missing addons:' ) );
+                missingAddons.forEach( e => console.log( chalk.red( e.name ) ) );
+
+            } else {
+
+                if ( missingAddons.length > 0 )
+                    console.log( 'Missing ' + chalk.red( missingAddons.length ) + ' addons!' );
+
+            }
         }
+
+        // Find which addons to copy.
+        const addonsToCopy = ( () => {
+            if ( ARGS.server ) {
+                // For server, find which addons exist in server oF version, then compare files to see if different.
+                console.log( chalk.bold( 'Comparing addons with server oF...' ) );
+                const serverOfAddonsPath = path.join( serverOfPath, 'addons' );
+                const serverAddons = fs.readdirSync( serverOfAddonsPath )
+                    .map( serverAddon => {
+                        return {
+                            name: serverAddon,
+                            path: path.join( serverOfAddonsPath, serverAddon )
+                        }
+                    } )
+                console.log( serverAddons );
+                const { modifiedAddons, missingServerAddons } = compareAddons( processedAddons, serverAddons );
+                return {
+                    local: modifiedAddons,
+                    global: missingServerAddons
+                };
+            }
+            return processedAddons.filter( addon => addon.found && !addon.local )
+        } )()
+
+        console.log( 'addonsToCopy', addonsToCopy );
+
+        console.log( chalk.bold( 'Copying addons...' ) );
+        // Strip .git files first...
+        if ( ARGS.server ) {
+
+            addonsToCopy.local.forEach( addon => {
+
+            } )
+
+            addonsToCopy.global.forEach( addon => {
+
+            } )
+
+        } else {
+
+            const addonsDestPath =
+                !!ARGS.library ?
+                    path.join( TEMP_OF_PATH, 'addons' ) :
+                    path.join( targetOutputPath, 'local_addons' );
+            // Compare addons to server addons to see if they match?
+            const copiedAddons = copyAddons( addonsToCopy, addonsDestPath );
+
+            if ( !ARGS.library ) {
+                // Replace text in addons.make
+                console.log( chalk.bold( 'Updating addons.make...' ) );
+                updateAddonsMake( copiedAddons, addonsMakePath )
+            }
+
+        }
+
 
     } )
 
     console.log();
+
+    // Compression
 
     let moveSrc = TEMP_OUTPUT_PATH;
     let moveDest = OUTPUT_PATH;
@@ -188,7 +328,7 @@ async function init() {
 
         console.log( chalk.bold( 'Compressing ofpkg...' ) );
         const zipPath = await compressDirectory(
-            // path.join( ARGS.library ? TEMP_OF_PATH : PROJECT_PATH ),
+            // path.join( ARGS.library ? TEMP_OF_PATH : PROJECTS_PATH ),
             TEMP_OUTPUT_PATH,
             TEMP_PATH,
             OUTPUT_NAME
@@ -203,6 +343,8 @@ async function init() {
 
     }
 
+    // Finalise
+
     console.log( chalk.bold( 'Moving to output...\n' ), moveDest );
     fs.moveSync( moveSrc, moveDest, { overwrite: ARGS.replace || moveDest.includes( 'ofpkg' ) } );
 
@@ -212,6 +354,21 @@ async function init() {
     console.log( chalk.bold( 'Done!' ) );
 
     /*************** Convenience functions *****************/
+
+    function getOfPath( configMakePath ) {
+
+        const buf = fs.readFileSync( configMakePath, { encoding: 'utf8' } )
+
+        // First try to match OF_ROOT at beginning of string ( uncommented setting ).
+        // If that is undefined, match the first instance of OF_ROOT ( default ).
+        const regexMatches =
+            buf.match( new RegExp( /(?<=(^OF_ROOT\ \=\ )).+/, 'm' ) ) ||
+            buf.match( new RegExp( /(?<=(OF_ROOT\ \=\ )).+/, 'm' ) );
+        const result = regexMatches[ 0 ].trim();
+
+        return result;
+
+    }
 
     function updateAddonsMake( copiedAddons, addonsMakePath ) {
 
@@ -245,46 +402,40 @@ async function init() {
 
     }
 
-    function copyAddons( addonsToCopy, targetOutputPath ) {
+    function getAddons( addonPath ) {
 
-        addonsToCopy.forEach( ( addon ) => {
+        const buf = check( () => fs.readFileSync( addonPath, { encoding: 'utf8' } ) );
+        const addons = buf.trim().split( '\n' );
 
-            const src = addon.src;
-            const dest = path.join( targetOutputPath, addon.name );
-            fs.copySync( src, dest );
-
-
-        } )
-
-        return addonsToCopy
+        return addons;
 
     }
 
-    async function compressDirectory( srcPath, destPath, name = 'ofpkg' ) {
+    function copyAddons( addonsToCopy, destPath ) {
 
-        const zipPath = path.join( destPath, name + '.zip' );
-        const output = fs.createWriteStream( zipPath );
-        const archive = archiver( 'zip' );
+        addonsToCopy.forEach( ( addon ) => copyAddon( addon, path.join( destPath, addon.name ) ) );
 
-        output.on( 'close', () => {
-            if ( ARGS.verbose )
-                console.log( 'Total compressed size: %s\n', formatBytes( archive.pointer() ) )
-        } );
-        archive.on( 'error', ( err ) => { throw err } );
+        return addonsToCopy;
 
-        archive.pipe( output );
-        archive.directory( srcPath, name );
-        await archive.finalize();
+    }
 
-        return zipPath;
+    function copyAddon( addon, destPath ) {
+
+        const src = addon.path;
+        const dest = path.join( destPath, addon.name );
+        fs.copySync( src, dest );
+
+        return addon;
 
     }
 
     function processAddons( addons, targetPath ) {
 
-        // Create local_addons if it doesn't exist.
-        const outputLocalAddonsPath = path.join( targetPath, 'local_addons' );
-        fs.ensureDirSync( outputLocalAddonsPath );
+        // if ( ARGS.forceLocal || !ARGS.library ) {
+        //     // Create local_addons if it doesn't exist.
+
+        //     fs.ensureDirSync( outputLocalAddonsPath );
+        // }
 
         const results = addons.map( addon => {
 
@@ -296,6 +447,8 @@ async function init() {
 
             if ( name.includes( 'local_addons' ) ) {
 
+                const outputLocalAddonsPath = path.join( targetPath, 'local_addons' );
+
                 const tokens = name.split( '#' );
                 const localAddonPath = tokens[ 0 ].trim();
                 const localAddonUrl = tokens[ 1 ].trim();
@@ -306,17 +459,6 @@ async function init() {
                 found = fs.pathExistsSync( path.join( outputLocalAddonsPath, name ) )
                 src = found ? localAddonPath : '';
                 local = true;
-
-                if ( !found && ARGS.verbose ) console.log( 'Local addon %s not addonFound, have to download from URL.', name );
-
-                // try {
-                //     console.log( `Cloning ${name}...`);
-                //     process.spawn( `cd git clone ${url}` );
-                // } catch ( err ) {
-                //     console.log( err );
-                // }
-
-                // TODO: git clone addon from localAddonURL. Gotta test this. (Is this even in scope or should we delegate this to package manager?)
 
             } else {
 
@@ -331,35 +473,136 @@ async function init() {
             return {
                 name: name,
                 found: found,
-                src: src,
+                path: src,
                 local: local,
                 text: text
             }
 
         } )
 
-        if ( !!ARGS.verbose ) {
-
-            console.log( chalk.bold( 'Found addons:' ) );
-            results.filter( e => e.found ).forEach( e => {
-                console.log( chalk.green( e.name ) );
-            } )
-
-            console.log( chalk.bold( 'Missing addons:' ) );
-            results.filter( e => !e.found ).forEach( e => {
-                console.log( chalk.red( e.name ) );
-            } )
-
-        } else {
-
-            const missingAddonsCount = results.filter( e => !e.found ).length;
-
-            if ( missingAddonsCount > 0 )
-                console.log( 'Missing ' + chalk.red( missingAddonsCount ) + ' addons!' );
-
-        }
-
         return results;
+
+    }
+
+    function compareAddons( addons, serverAddons ) {
+
+        // const missingServerAddons = addons.filter( ( addon ) => {
+
+        //     if ( serverAddons.some( serverAddon => serverAddon.name == addon.name ) )
+        //         return false;
+
+        //     return true;
+
+        // } );
+
+        const differences = [];
+
+        let matchedFilesCount = 0;
+
+        const missingServerAddons = [];
+
+        const modifiedAddons = addons.filter( ( addon ) => {
+
+            const foundServerAddon = serverAddons.find( serverAddon => serverAddon.name === addon.name )
+
+            if ( !foundServerAddon ) {
+                missingServerAddons.push( addon );
+                return false;
+            }
+
+            const addonFiles =
+                klawSync(
+                    addon.path,
+                    { nodir: true, filter: file => !file.path.includes( 'example' ) }
+                )
+                    .map( file => file.path );
+
+            const foundServerAddonFiles =
+                klawSync(
+                    foundServerAddon.path,
+                    { nodir: true, filter: file => !file.path.includes( 'example' ) }
+                )
+                    .map( file => file.path );
+
+            console.log( chalk.bold( 'Finding files...' ) );
+
+            addonFiles.forEach( filePath => {
+
+                // print "dir/filename"
+                console.log( chalk.blue( path.join( path.basename( path.dirname( filePath ) ), path.basename( filePath ) ) ) );
+
+                const matchedFileIndex = foundServerAddonFiles.findIndex( serverFilePath => { 
+                    const fpName = path.basename( filePath ) ;
+                    const servfpName = path.basename( serverFilePath );
+                    // servfpName === fpname;
+                    const diff = levCompare( fpName, servfpName );
+                    
+                    console.log(
+                        diff, 
+                        chalk.yellow( path.join( path.basename( path.dirname( serverFilePath ) ),
+                        path.basename( serverFilePath ) ) ) );
+                    const match =  diff == 0 ;
+                    return match;
+                } );
+
+                let matchedFile = '';
+
+                if ( matchedFileIndex == -1 ) {
+                    console.log( chalk.red( matchedFileIndex ) );
+                    return;
+                } else {
+                    matchedFile = foundServerAddonFiles[ matchedFileIndex ];
+                    console.log( 'Matched file:', chalk.green( matchedFile ) )
+                }
+
+
+                // Compare the two text files here ////////
+                const fileStr = fs.readFileSync( filePath, { encoding: 'utf8' } );
+                const matchedFileStr = fs.readFileSync( matchedFile, { encoding: 'utf8' } );
+
+                // console.log( { types: {
+                //     filePath: typeof filePath,
+                //     matchedFile: typeof matchedFile,
+                //     fileStr: fileStr,
+                //     matchedFileStr: matchedFileStr,
+                // }});
+
+                const diff = levCompare( fileStr, matchedFileStr );
+
+                
+                foundServerAddonFiles.splice( matchedFileIndex, 1 );
+                
+                matchedFilesCount++;
+            } )
+
+            console.log( 
+                'Total files:',
+                addonFiles.length,
+                'Matched files:',
+                matchedFilesCount
+            );
+            // console.dir( differences );
+            // console.log( files );
+            // console.log( 'files in', foundServerAddon );
+
+        } );
+
+        // Iterate through addons
+        // Attempt match with server version folder name
+        // If no match, push to missingServerAddons
+        // If match,
+        // get list of filenames
+        // filter example files
+        // iterate through remaining files
+        // compare with server addon version with same filename
+        // if same, continue,
+        // if not same, push to modifiedAddons
+        // ( maybe have a tolerance value? idk )
+
+        return {
+            modifiedAddons: modifiedAddons,
+            missingServerAddons: missingServerAddons
+        }
 
     }
 
@@ -406,12 +649,23 @@ async function init() {
 
     }
 
-    function getAddons( addonPath ) {
+    async function compressDirectory( srcPath, destPath, name = 'ofpkg' ) {
 
-        const buf = check( () => fs.readFileSync( addonPath, { encoding: 'utf8' } ) );
-        const addons = buf.trim().split( '\n' );
+        const zipPath = path.join( destPath, name + '.zip' );
+        const output = fs.createWriteStream( zipPath );
+        const archive = archiver( 'zip' );
 
-        return addons;
+        output.on( 'close', () => {
+            if ( ARGS.verbose )
+                console.log( 'Total compressed size: %s\n', formatBytes( archive.pointer() ) )
+        } );
+        archive.on( 'error', ( err ) => { panic( err ) } );
+
+        archive.pipe( output );
+        archive.directory( srcPath, name );
+        await archive.finalize();
+
+        return zipPath;
 
     }
 
@@ -574,7 +828,7 @@ async function init() {
 
     function panic( err ) {
         console.error( chalk.bold.red( 'Error: ' ) + ( err.message || err ) );
-        cleanUp( TEMP_PATH );
+        if ( TEMP_PATH ) cleanUp( TEMP_PATH );
         process.exit();
     }
 

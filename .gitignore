@@ -1,6 +1,7 @@
 node_modules/*
 node_modules
 temp
+extra
 zip
 dist
 .DS_Store
