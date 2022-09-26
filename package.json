@@ -9,7 +9,7 @@
     "build": "pkg .",
     "buildRun": "pkg . && ./dist/ofpkg",
     "buildTest": "npm run build && npm run test",
-    "test": "cd /Users/rafael/Documents/of_v0.11.2_osx_release/apps/antimodular/remotePulseActionsTest && /Users/rafael/Documents/experiments/ofpkg/dist/ofpkg . && cd -"
+    "test": ""
   },
   "pkg": {
     "targets": [

@@ -3,8 +3,9 @@
 MAJOR="0"
 MINOR="1"
 PATCH="6"
+VERSION=$(curl https://raw.githubusercontent.com/oxgr/ofpkg/main/package.json | grep -o '"version": "[^"]*' | grep -o '[^"]*$')
 PWD=$(pwd)
-DIST="ofpkg-macos-x64-v${MAJOR}.${MINOR}.${PATCH}"
+DIST="ofpkg-macos-x64-v${VERSION}"
 
 if [ ! -d ${HOME}/.ofpkg/ ]
 then
@@ -13,8 +14,8 @@ fi
 
 cd ${HOME}/.ofpkg
 
-echo "Downloading ofpkg@v${MAJOR}.${MINOR}.${PATCH}..."
-curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${MAJOR}.${MINOR}.${PATCH}/${DIST}.zip
+echo "Downloading ofpkg@v${VERSION}..."
+curl -LOks https://github.com/oxgr/ofpkg/releases/download/v${VERSION}/${DIST}.zip
 
 echo "Installing at ${HOME}/.ofpkg ..."
 
